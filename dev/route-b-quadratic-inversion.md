@@ -188,7 +188,13 @@ M = Sigma_x, where the Gaussian was off by a factor in the tail. It needs only
 CGF VALUES, no derivatives. Then invert the now-exact K_Q by Lugannani-Rice.
 Remaining M2 work: implement GH-quadrature K_Q + LR, confirm the full tail beats
 M1 against enumeration, add a lattice continuity correction for the deep tail,
-then graduate test-first.
+then graduate test-first. The Lugannani-Rice / r* inversion is identical to M1's;
+only the CGF source changes. Port-ready formulas (central + noncentral CGF and
+derivatives, saddle equation, LR, r*, the Daniels mean limit) are in
+`dev/kuonen-spa-formulas.md`, which also records a known M1 gap: the mean-band
+fallback returns the plain normal tail instead of the Daniels limiting form
+1/2 - K'''(0)/(6 sqrt(2 pi) K''(0)^{3/2}), dropping the skewness term. Harmless for
+tail p-values; fix when M1 is next touched.
 
 ### M3: do not forget the sparse-grid / QMC work
 Tensor Gauss-Hermite costs n^r, feasible only for small r (the number of
