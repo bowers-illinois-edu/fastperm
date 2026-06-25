@@ -1,0 +1,29 @@
+Package: fastperm
+Title: Fast, General Permutation Testing with Sensitivity Analysis
+Version: 0.0.0.9000
+Authors@R:
+    person("Jake", "Bowers", email = "jake@jakebowers.org", role = c("aut", "cre"))
+Description: Provides fast, general-purpose permutation tests for arbitrary
+    test statistics and as-if-randomized designs, using saddlepoint approximation
+    and importance sampling via exponential tilting of the permutation measure.
+    Supports Rosenbaum-style sensitivity analysis over the Gamma bias parameter
+    with warm-starting across Gamma grids. Intended as a faster, more general
+    alternative to brute-force permutation for observational studies, matched
+    designs, and stratified experiments.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Depends:
+    R (>= 4.1.0)
+Imports:
+    stats
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    coin
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+URL: https://github.com/bowers-illinois-edu/fastperm
+BugReports: https://github.com/bowers-illinois-edu/fastperm/issues
+Config/roxygen2/version: 8.0.0
