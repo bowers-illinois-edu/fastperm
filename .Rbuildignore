@@ -1,4 +1,6 @@
 ^LICENSE\.md$
+^Makefile$
+^dev$
 ^\.github$
 ^CLAUDE\.md$
 ^CLAUDE_CODING\.md$
