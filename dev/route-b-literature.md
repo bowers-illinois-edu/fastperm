@@ -263,8 +263,12 @@ Gaussian-only quadratic-form tails:
  - [V] Liu, Tang & Zhang (2009), CSDA 53(4):853-856. 4-cumulant chi-square match.
  - [V] Wood (1989), Comm. Stat. Sim. Comp. 18(4):1439-1456. F approximation.
 Saddlepoint for quadratic forms (Gaussian):
- - [V/F] Kuonen (1999), Biometrika 86(4):929-935. Full text NOT accessed; the
-   standard saddlepoint-for-quadratic-forms-in-normal-variables cite. READ.
+ - [V] Kuonen (1999), Biometrika 86(4):929-935. DOI 10.1093/biomet/86.4.929. OPEN
+   ACCESS (EPFL: infoscience.epfl.ch/record/84834/files/860929.pdf). The standard
+   saddlepoint-for-quadratic-forms-in-normal-variables cite; our M1 reference.
+   NOTE: the printed CGF has a typo (missing zeta in the 2nd-term numerator); use
+   the Imhof (1961) eq. 2.3 corrected form. Formulas captured + verified against
+   shotGroups/GMMAT, survey/FREGAT, and arXiv:2201.11762 in dev/kuonen-spa-formulas.md.
  - [V] Marsh (1998), Econometric Theory 14(5):539-559. Ratios, normal.
  - [V] Butler & Paolella (2008), Bernoulli 14(1):140-154. Ratios, normal.
 Non-Gaussian quadratic forms:

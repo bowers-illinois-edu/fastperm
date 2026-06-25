@@ -2,12 +2,31 @@
 
 Port-ready reference for the Gaussian-d (weighted-chi-square) quadratic-form tail:
 the M1 closed form our HS+GH route (M2) generalizes by replacing the closed-form
-chi-square-mixture CGF with the exact non-Gaussian K_Q. Formulas relayed by the
-LitSurvey teammate 2026-06-25 and verified here by direct differentiation; cite
-Kuonen, D. (1999), "Saddlepoint approximations for distributions of quadratic
-forms in normal variables," Biometrika 86(4):929-935, DOI 10.1093/biomet/86.4.929,
-and Daniels (1987), Int. Stat. Rev. 55(1):37-48 for the limiting form. Companion:
-the design note `route-b-quadratic-inversion.md` and `route-b-literature.md`.
+chi-square-mixture CGF with the exact non-Gaussian K_Q. Cite Kuonen, D. (1999),
+"Saddlepoint approximations for distributions of quadratic forms in normal
+variables," Biometrika 86(4):929-935, DOI 10.1093/biomet/86.4.929, and Daniels
+(1987), Int. Stat. Rev. 55(1):37-48 for the limiting form. Companion: the design
+note `route-b-quadratic-inversion.md` and `route-b-literature.md`.
+
+## Provenance and the PUBLISHED TYPO (important for citation)
+
+The CGF as PRINTED in Kuonen (1999) has a typo: the second term's numerator is
+missing the zeta. The standard fix (per Imhof 1961, eq. 2.3) restores it, giving
+the delta_i lambda_i zeta / (1 - 2 zeta lambda_i) form recorded below. Three
+independent open-source implementations carry the correction and verify these
+formulas: shotGroups::saddlepoint (noncentral, general d.f.; D. Wollschlaeger,
+adapted from Han Chen's GMMAT::SMMAT), and the central-case Lumley saddle in
+survey::pchisqsum / FREGAT::chisqsum; the central CGF and derivatives also match
+arXiv:2201.11762. So the formulas below are VERIFIED against three code bases plus
+a paper, not only by our own differentiation. Two consequences:
+ - For our code (central, delta_i = 0) the typo is irrelevant -- it lives entirely
+   in the noncentral term we never evaluate.
+ - If a manuscript ever cites Kuonen's printed equation, NOTE the missing zeta and
+   cite Imhof (1961) eq. 2.3 for the corrected form. Do not quote the 1999 CGF as
+   printed.
+Kuonen (1999) is OPEN ACCESS: https://infoscience.epfl.ch/record/84834/files/860929.pdf
+(EPFL); no download needed. Cleanest port source: shotGroups/R/saddlepoint.R
+(short, noncentral, typo-corrected); survey:::saddle for the central-only case.
 
 ## Statistic and reduction
 
@@ -90,6 +109,15 @@ are unaffected. The cheap fix when M1 is next touched: replace the |th|-small
 fallback with the Daniels limiting form (exact at the mean) rather than the normal
 tail. Track with the M2 build.
 
+How the reference implementations handle the same band (precedent for the fix):
+survey::pchisqsum uses the saddlepoint only for x > 1.05 * sum(lambda) and switches
+to a Satterthwaite moment-match below that; shotGroups / FREGAT return NA when
+|zeta-hat| < 1e-4. So the established near-mean choices are the Daniels third-
+cumulant limit (exact at the mean) or a Satterthwaite fallback over a small band --
+both strictly better than our plain normal tail, which keeps the mean but drops the
+skewness. The Daniels limit is the minimal correct fix at the point; a Satterthwaite
+band is the more robust choice if the 0/0 region needs widening.
+
 ## r* (Barndorff-Nielsen) higher-order variant
 
 Same w-hat, u-hat:
@@ -104,6 +132,16 @@ u-hat are computed. (Same root as the M2 r* option; see the design note.)
 
  - Accumulate s_i = 1 - 2 zeta lambda_i in one pass and reuse across K, K', K''.
  - Clamp zeta-hat strictly below 1/(2 lambda_max).
+ - Conditioning (from shotGroups): rescale lambda <- lambda / max(lambda) and
+   q <- q / max(lambda) before root-finding; the tail probability is invariant
+   under this common rescaling, so the returned p-value is unchanged but K' is
+   better conditioned and the pole sits at a fixed 1/2.
+ - 1-D special case is EXACT, bypass the approximation: with a single eigenvalue,
+   P(Q >= q) = pchisq(q / lambda, df = h, ncp = delta, lower.tail = FALSE). A free
+   correctness anchor (r = 1) and a cheap fast path.
+ - The r* form (1 - Phi(w + (1/w) log(u/w))) is what the reference code returns;
+   it is a bit more stable than additive LR in the far tail by staying in
+   log/pnorm space. Pick one form; do not mix.
  - The HS+GH M2 engine reuses this EXACT Lugannani-Rice / r* inversion; only the
    CGF source changes (closed-form chi-square mixture here -> exact non-Gaussian
    K_Q = log E_W[exp(K_d(sqrt(2 theta) W))] there). That swap is the M1 -> M2 step.
