@@ -68,6 +68,11 @@ non-normality of d and the weighted-chi-square shape bite at once.
 
 ## The inversion: Hubbard-Stratonovich, then Laplace, then Lugannani-Rice
 
+**SUPERSEDED 2026-06-25: the Laplace step is a proven dead end -- see the
+"Update" section at the end of this file. The Hubbard-Stratonovich
+representation is correct, but it must be evaluated by quadrature, not Laplace.
+The original reasoning is kept below as the record.**
+
 We have the joint CGF K_d(t) = log E[exp(t' d)] (built). We want
 K_Q(theta) = log E[exp(theta * d' A d)] with A = M^{-1}, then a tail from it.
 
@@ -144,3 +149,98 @@ dependency waits until fastperm itself is on CRAN.
 riposte's T_max needs a joint-tail probability, not a quadratic-form tail --
 either a multivariate saddlepoint or pmvnorm on the exact S-W correlation. Out
 of scope here; sequence it after the quadratic inversion.
+
+## Update 2026-06-25: M1 shipped, Laplace dead end, the quadrature fix, M3 (sparse grids)
+
+State after a build-and-simulate session. Scratch (all reproducible):
+`dev/spike-quadratic-spa.R`, `dev/spike-cgf-derivs.R`, `dev/spike-quadratic-m2.R`,
+`dev/spike-quadratic-m2b.R`, `dev/spike-m2-quad.R`, `dev/spike-m2-diagnose.R`.
+
+### M1 is done and committed
+`fastperm_spa_quadratic(scores, treatment, strata, metric = "cov" | <matrix>,
+method = "gaussian")` ships the Gaussian-d weighted-chi-square tail via
+Lugannani-Rice (commit 3482d3f on route-b; R CMD check 0/0/0; enumeration +
+imhof oracle in tests). The rotation reduction Q = ||rot' d||^2 with
+rot rot' = M^{-1} is exact (verified vs enumeration to 1e-9), so the metric is
+preprocessing and the core works on a sum of squares. `method = "saddlepoint"`
+(M2) currently errors with a "not yet implemented" message.
+
+### The Laplace step (the superseded section above) is wrong -- proven
+Leading-order Laplace of the H-S integral around its mode returns EXACTLY the
+Gaussian K_Q, carrying none of the non-normality. Reason: K_d is centered, so
+grad K_d(0) = 0, hence w = 0 is always a critical point of the inner objective,
+and the second-order expansion there gives -1/2 log det(I - 2 theta Sigma) --
+the Gaussian CGF. The non-normality lives only in higher-order Laplace terms.
+Confirmed numerically: H-S K_Q equalled the Gaussian K_Q to six digits and both
+diverged from the exact (enumerated) K_Q in the tail. The analytic
+gradient/Hessian built to clean up the Laplace numerics (`spike-cgf-derivs.R`:
+grad K = V'p, Hess K = V'(P - pp')V via tilted inclusion probabilities;
+validated to recover the closed-form mean and covariance exactly) therefore do
+NOT rescue M2. They remain useful -- clean K_Q' for Lugannani-Rice, and the
+cumulant infrastructure RItools wants -- but they are not the fix.
+
+### The fix (M2), validated at the CGF level
+The H-S representation is an exact Gaussian expectation:
+    M_Q(theta) = E_{W ~ N(0, I_r)}[ exp(K_d(sqrt(2 theta) W)) ].
+Evaluate it by Gauss-Hermite QUADRATURE, not Laplace. Tensor GH (40 nodes,
+r = 2) recovered the exact enumerated K_Q to six digits for both M = V_d and
+M = Sigma_x, where the Gaussian was off by a factor in the tail. It needs only
+CGF VALUES, no derivatives. Then invert the now-exact K_Q by Lugannani-Rice.
+Remaining M2 work: implement GH-quadrature K_Q + LR, confirm the full tail beats
+M1 against enumeration, add a lattice continuity correction for the deep tail,
+then graduate test-first.
+
+### M3: do not forget the sparse-grid / QMC work
+Tensor Gauss-Hermite costs n^r, feasible only for small r (the number of
+representations / covariates): trivial at r = 2-4, infeasible at riposte's ~6,
+impossible at RItools' covariate counts (10-50). The H-S expectation is the same
+for any r, so the dimension problem is purely the quadrature rule. M3 = a
+quadrature scheme matched to r:
+ - tensor Gauss-Hermite for small r,
+ - sparse-grid (Smolyak) Gauss-Hermite for moderate r,
+ - (quasi-)Monte Carlo of the same expectation for large r (scales to any r;
+   needs variance control / importance sampling, since exp(K_d) can be heavy).
+This is what RItools' many-covariate balance test will actually require, so M3
+is not optional polish -- it is the path to the RItools backend at realistic
+covariate counts. Two background surveys (academic methods; existing R/C++ for
+quadratic-form tails, saddlepoints, and sparse-grid/QMC quadrature) were
+launched 2026-06-25 to find better-known methods or reusable code before we
+build M3 (and possibly to simplify M2).
+
+### Higher-order inversion (r*) and the Osipov rate question
+After reading Kolassa-Robinson (2011) in full (see route-b-literature.md sec 3),
+two points bear on the inversion step.
+
+1. Higher-order asymptotics apply to ONE step. The HS identity is exact and the
+   GH quadrature error is numerical (node-count-controlled, not asymptotic-in-n),
+   so the only asymptotic-in-n error in the pipeline is the final scalar tail
+   inversion. Lugannani-Rice there is O(1/n). The scalar Barndorff-Nielsen r*
+   (modified signed root w* = w + (1/w) log(v/w), v = theta_hat sqrt(K_Q''))
+   upgrades it to O(n^{-3/2}) as a near-free drop-in: same saddle theta_hat, same
+   K_Q, only the root changes. K_Q'' comes from the same GH expectation with an
+   extra factor, or by finite-differencing K_Q. Implement as
+   correction = c("none", "r-star"). The scalar reduction here beats K-R: their
+   multivariate r* (eq 9) stays O(1/n); 1-D r* gets the extra half-order off the
+   shelf.
+
+2. The Osipov barrier: mechanism RESOLVED, but it points to a different residual
+   threat. Full analysis in route-b-literature.md sec 3 (after reading K-R 2011 and
+   RHHQ 1990 in full). Short version: the n^{-1/4} is RHHQ's surface-area penalty
+   (Cor 2.1: error = (surface * n^{1/2} + volume) * O(...); the boundary term carries
+   an extra n^{1/2} for a curved level set, none for a flat one). It is an artifact
+   of the Edgeworth-OVER-A-CURVED-REGION method, not a property of Q. Our HS+GH
+   integrates over all W directions -- the angular integral over the degenerate
+   sphere of boundary points -- EXACTLY, so the surface penalty never arises. Two
+   honest caveats: (a) escaping curvature is NOT proving scalar O(1/n) -- the real
+   residual threat is the DISCRETENESS of Q's permutation law at small B (ties to
+   eigenvalue commensurability, sec 5 of the lit note); (b) the honest competitor is
+   Imhof, not Osipov -- as B grows the inner Laplace becomes exact and Imhof is
+   itself O(1/B), so our gain over Imhof is a better CONSTANT at small B (carrying
+   true skew/kurtosis of d), not a better rate. Decisive experiment has two readings:
+   our error vs B (rate; slope -1 = scalar O(1/B), shallower = discreteness not
+   Osipov), and our error vs Imhof at fixed small B (constant; favors us, widening
+   with skewness). The Table-3 selling point stands either way: K-R's "Quadratic"
+   row (D^2 by chi-square) is badly off in the tail and they call accurate D^2 tails
+   "not available"; an exact-CGF saddlepoint is a better calibration of the same
+   statistic that practitioners already report. (Referee Q "why not Lambda?": we
+   keep the deployed Hansen-Bowers d^2 and have the exact CGF K-R lacked.)
