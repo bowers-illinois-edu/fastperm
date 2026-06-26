@@ -238,6 +238,21 @@ span -> 0). Verify the exact CC1/CC2 forms against Butler (2007) Sec. 1.2.5
 before publishing equations. Practical plan: continuous LR by default; add CC2
 only if a coarse-lattice case shows a tail discrepancy against enumeration.
 
+UPDATE 2026-06-26 (rate experiment, dev/route-b-rate-experiment-findings.md): the
+framing above (CC driven by Q's lattice span) is NOT the residual we actually found.
+Even on dense, incommensurate support (M = Sigma_x-like, the first case above) M2
+carries a 3-7% positive tail bias at p=0.05 that a span-driven CC2 cannot touch:
+the local span shrinks like 1/N, which would predict a vanishing bias the data
+contradict. Controls show it is not lattice span, not max-domination, not curvature
+(it FALLS with dimension r), and not the continuous chi^2_r saddlepoint (analytic
+chi^2_r LR is +0.5% for all r). It is the gap between continuous LR and the exact
+tail of a FINITE-discrete Q, specific to the quadratic form (the scalar sum
+saddlepoint on the same orbit is accurate <1%). So CC2 is still right for the genuine
+coarse-lattice edge case (single/double stratum), but it is NOT a fix for the
+dense-support residual. That residual is small and falling at r>=2 (negligible at
+RItools' r=10-50), conservative, and we ship NO correction for it -- decision and
+mechanism in the design memo sec "Update 2026-06-26".
+
 ## 6. Software (from the code survey)
 
 No package does our non-Gaussian quadratic-form saddlepoint; we write the LR

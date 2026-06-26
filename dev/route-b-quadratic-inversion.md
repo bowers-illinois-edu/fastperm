@@ -275,3 +275,39 @@ two points bear on the inversion step.
    "not available"; an exact-CGF saddlepoint is a better calibration of the same
    statistic that practitioners already report. (Referee Q "why not Lambda?": we
    keep the deployed Hansen-Bowers d^2 and have the exact CGF K-R lacked.)
+
+### Update 2026-06-26: the decisive experiment ran -- result and mechanism
+Full write-up + 8 scripts in dev/route-b-rate-experiment-findings.md and
+dev/experiment-*.R; summary in vignette sec 6-7. The "error vs B" reading came back
+SHALLOWER than slope -1, so caveat (a) wins over the optimistic O(1/B) reading: M2's
+relative error at fixed tail depth p=0.05 does NOT fall like 1/B. It sits at 3-7%
+over B=8..12 and grows toward a finite floor, while the crude chi^2 M1 falls toward
+its own +0.5% limit (would overtake M2 near B~45). So M2's win is a better CONSTANT
+(4-10x smaller p-value error than M1 at realistic B), NOT a better rate -- exactly
+the better-constant-vs-Imhof framing of caveat (b).
+
+The residual is the DISCRETENESS of caveat (a), and four controls pin its nature and
+kill the obvious fixes. (i) Pipeline exact: GH/HS K_Q matches the empirical orbit
+CGF to 1e-14 at the saddle, so M2 == LR-of-exact-orbit-CGF; the gap is genuine LR
+error inverting the exact CGF of a FINITE support. (ii) NOT curvature: bias FALLS
+with dimension r (+15.5% r=1, +6.7% r=2, +1.7% r=3 at B=10) -- a count of discrete
+points against the curved level set {Q=q} (Gauss-circle) would GROW with r. So the
+RHHQ surface mechanism, escaped in the smooth/Edgeworth sense, does NOT reappear
+through the finite orbit. (iii) NOT the continuous saddlepoint: analytic chi^2_r LR
+error is +0.5% for r=1,2,3 alike. (iv) NOT generic permutation discreteness: the
+SCALAR sum saddlepoint on the same orbit is accurate <1% (flat boundary fine;
+Robinson O(1/B) holds) -- the residual is specific to the quadratic form. What
+remains: the gap between continuous LR and the exact tail of a finite-discrete Q;
+a uniform law on n iid exact chi^2_r draws shows the same bias, and the orbit
+(structured grid) beats random scatter at every r.
+
+Consequences. (1) No standard continuity correction targets this (not a regular
+lattice -- local span ~1/N -> 0; not max-domination -- tilt ess ~6% of N; not
+curvature; not the chi^2 shape), so the "correction = none/r-star" plan in point 1
+stays and we add NO lattice/CC term. r* and LR agree here, so r* does not move it
+either. (2) PRACTICAL: the omnibus is used at r>=2 (r=1 is a scalar test), where the
+bias is small and FALLS with r -- ~negligible at RItools' r=10-50, i.e. M2 IMPROVES
+as covariates are added -- and it is CONSERVATIVE (p slightly too large, controls
+Type I). Decision (user-approved 2026-06-26): do NOT build a continuity correction;
+wire M2 into riposte instead. A finite-discrete Euler-Maclaurin boundary term is the
+only thing that could touch it, is research-level, and is not worth the complexity.

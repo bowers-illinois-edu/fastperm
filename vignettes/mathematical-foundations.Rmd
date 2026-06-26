@@ -247,15 +247,42 @@ $W$, which is the angular integration over the degenerate sphere of dominating
 points, and Gauss-Hermite does it exactly. So the curvature is folded exactly into
 the scalar $K_Q$ and the barrier does not arise.
 
-Two honest caveats temper any rate claim. First, escaping the curvature artifact is
-not the same as proving scalar $O(1/n)$: the residual question is the discreteness
-of $Q$ at small stratum counts, not curvature. Second, the honest competitor is
-Imhof, not Osipov's method; as the stratum count grows the inner Laplace becomes
-exact and Imhof is itself $O(1/B)$, so M2's gain over Imhof is a better *constant*
-at small $B$ -- carrying the true skewness and kurtosis -- not a better rate. The
-decisive check is an experiment, relative error against $B$, which is the next piece
-of work. A fuller discussion, with references and verification status, is in
-`dev/route-b-literature.md`.
+Two honest caveats temper any rate claim, and we have now tested both. First,
+escaping the curvature artifact is not the same as proving scalar $O(1/n)$: the
+residual question is the discreteness of $Q$ at small stratum counts, not curvature.
+Second, the honest competitor is Imhof, not Osipov's method; as the stratum count
+grows the inner Laplace becomes exact and Imhof is itself $O(1/B)$, so M2's gain
+over Imhof is a better *constant* at small $B$ -- carrying the true skewness and
+kurtosis -- not a better rate.
+
+The decisive check is an experiment: the relative error of M2 against the exact
+permutation tail as the stratum count $B$ grows. We ran it (matched triples, skewed
+$d$, metric $V_d$, full $3^B$ enumeration, tail depth $p = 0.05$, averaged over
+random designs), and it confirms the second caveat against the first reading. M2's
+relative error does *not* fall like $1/B$. It sits at 3 to 7 percent over $B = 8$ to
+$12$ and, if anything, grows toward a floor, while the crude chi-square M1 keeps
+falling toward its own $+0.5\%$ limit. So the simulation revises the optimistic
+reading into the better-constant claim: M2 cuts the M1 p-value error 4- to 10-fold at
+the stratum counts a balance test uses (escaping the useless Osipov-rate $D^2$ tail),
+but it does not buy a better asymptotic rate.
+
+The residual is a finite-discrete-representation effect, and a chain of controls
+rules out the obvious corrections. It is not a pipeline artifact: the Gauss-Hermite
+CGF reproduces the exact orbit CGF to $10^{-14}$ at the saddle, so the gap is genuine
+Lugannani-Rice error inverting the exact CGF of a *finite* support. It is not the
+continuous saddlepoint: the analytic chi-square LR error is $+0.5\%$ for $r = 1, 2, 3$
+alike. It is not curvature: the bias *falls* with dimension -- $+15\%$ at $r = 1$,
+$+7\%$ at $r = 2$, $+2\%$ at $r = 3$ -- where a count of discrete points against the
+curved level set would grow with $r$. And it is not generic permutation discreteness:
+the scalar sum saddlepoint on the same orbit is accurate to under one percent. What
+remains is the gap between continuous Lugannani-Rice and the exact tail of a finite,
+discrete representation of $Q$; a uniform law on $n$ i.i.d. exact chi-square draws
+shows the same bias against an analytic LR error of $+0.5\%$. The practical reading is
+favorable: the Mahalanobis omnibus is used at $r \ge 2$ (a single covariate is a
+scalar test), the bias there is small and *falls* as covariates are added, and it is
+conservative -- M2 reports p-values slightly too large. The full chain of
+experiments is in `dev/route-b-rate-experiment-findings.md`; a fuller literature
+discussion is in `dev/route-b-literature.md`.
 
 On higher-order asymptotics specifically: the scalar $r^*$ of Section 5.4 is the
 tail refinement of a statistic with a known CGF (Barndorff-Nielsen 1986;
@@ -264,17 +291,28 @@ Brazzale's core program, the $r^*$ for a parameter of interest in a parametric
 likelihood with nuisance parameters, which our randomization null -- no likelihood,
 no nuisance parameter -- does not invoke.
 
-## 7. Known limitation: coarse lattices
+## 7. Known limitation: coarse lattices and the finite-discrete residual
 
-M2 is accurate on a dense, multi-stratum support, which is the regime balance
-testing has. On a single or double stratum the picture changes: there $V_d$ is
-proportional to the sample covariance of the scores (so the metric choices
-coincide), and $Q$'s support is a coarse, atom-heavy lattice. The continuous
-saddlepoint then under- or overshoots the discrete tail, and a continuity
-correction is needed -- the Daniels (1987) second correction, which replaces
-$\hat u$ by $2\sinh(\hat\theta/2)\sqrt{K''(\hat\theta)}$ for a regular lattice. That
-correction is the next M2 refinement and is not yet implemented; on coarse lattices
-M2 currently falls back to the Gaussian tail.
+M2 is much more accurate than M1 on the dense, multi-stratum support balance
+testing has -- 4 to 10 times better in the rate experiment of Section 6 -- but it
+carries the finite-discrete residual diagnosed there, and a separate coarse-lattice
+edge case. On a single or double stratum $V_d$ is proportional to the sample
+covariance of the scores (so the metric choices coincide), and $Q$'s support is a
+coarse, atom-heavy lattice; the continuous saddlepoint then under- or overshoots the
+discrete tail, so M2 falls back to the Gaussian tail there. That fallback ships.
+
+The dense-support residual (Section 6) is not addressed by a continuity correction,
+and we are explicit that we do not implement one: the controls show it is not a
+regular lattice (no fixed span; the local span shrinks like $1/N$, which would
+predict a vanishing bias the data contradict), not the empirical CGF's tail-max, not
+boundary curvature, and not the continuous chi-square saddlepoint. It is the gap
+between continuous Lugannani-Rice and the exact tail of a finite, discrete $Q$, and
+it shrinks with dimension rather than growing. Because that residual is small and
+falling at the $r \ge 2$ where the omnibus is used, conservative in sign, and already
+far below M1, a finite-discrete correction (an Euler-Maclaurin-type boundary term) is
+research-level work whose payoff we judge not worth its complexity for this
+application. The path forward is to wire M2 into the balance-test front ends, not to
+chase the last few percent at low $r$.
 
 ## 8. Validation
 
