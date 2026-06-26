@@ -99,24 +99,29 @@ Switch to this when |zeta-hat| (or |x - E[Q]|) is below a small tolerance, to av
 0/0. For a weighted sum of chi-squares K'''(0) > 0, so the value at the mean is
 BELOW 1/2.
 
-### KNOWN M1 GAP (found 2026-06-25): the mean-band fallback drops the skewness term
-Our shipped `.quad_lr_upper` falls back to the plain normal tail
-`pnorm((q - m0)/sd0)` when |th| < 1e-6 (and at q = m0 returns exactly 1/2). That
-DISCARDS the -K'''(0)/(6 sqrt(2 pi) K''(0)^{3/2}) skewness correction above. The
-error is confined to a narrow band around p ~ 0.5 and is irrelevant for tail
-p-values (where the full LR formula runs), so M1's tail behaviour and all tests
-are unaffected. The cheap fix when M1 is next touched: replace the |th|-small
-fallback with the Daniels limiting form (exact at the mean) rather than the normal
-tail. Track with the M2 build.
+### M1 mean-band: FIXED 2026-06-25 (commit 33849f1)
+The shipped `.quad_lr_upper` used to fall back to the plain normal tail
+`pnorm((q - m0)/sd0)` when |th| < 1e-6 (returning a flat 1/2 at q = m0), dropping
+the -K'''(0)/(6 sqrt(2 pi) K''(0)^{3/2}) skewness term. Fixing only the point
+exposed a deeper issue: the 1/u - 1/w term loses precision to cancellation
+(w -> u) over a NEIGHBOURHOOD of the mean, not just at it, giving non-monotone
+noisy values for |th| in roughly (1e-6, 1e-2) -- the old 1e-6 guard was far too
+narrow. The fix replaces the term by its Taylor series in theta over the unstable
+band (|w| < 0.1):
+    1/u - 1/w = c0 + c1 theta + O(theta^2),
+    c0 = -K'''(0) / (6 K''(0)^{3/2}),
+    c1 = 5 K'''(0)^2 / (24 K''(0)^{5/2}) - K''''(0) / (8 K''(0)^{3/2}),
+with K''''(0) = 48 sum lambda^4 (central). The tails (|w| >= 0.1) use the unchanged
+direct formula, so tail p-values are untouched. Result: monotone, agrees with
+imhof, mean-point error cut from 0.147 (old) to 0.014 (the saddlepoint's own
+near-mean error). Tests: Daniels-limit-at-the-mean and continuity/monotonicity.
 
-How the reference implementations handle the same band (precedent for the fix):
-survey::pchisqsum uses the saddlepoint only for x > 1.05 * sum(lambda) and switches
-to a Satterthwaite moment-match below that; shotGroups / FREGAT return NA when
-|zeta-hat| < 1e-4. So the established near-mean choices are the Daniels third-
-cumulant limit (exact at the mean) or a Satterthwaite fallback over a small band --
-both strictly better than our plain normal tail, which keeps the mean but drops the
-skewness. The Daniels limit is the minimal correct fix at the point; a Satterthwaite
-band is the more robust choice if the 0/0 region needs widening.
+Precedent for the choice (from the reference implementations): survey::pchisqsum
+uses the saddlepoint only for x > 1.05 * sum(lambda) and switches to Satterthwaite
+below; shotGroups / FREGAT return NA when |zeta-hat| < 1e-4. We instead keep a
+usable, monotone p-value across the mean via the series -- better than NA and
+better than a moment-match for our purpose, though all three agree the region is
+irrelevant for tail p-values.
 
 ## r* (Barndorff-Nielsen) higher-order variant
 

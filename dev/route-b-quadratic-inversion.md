@@ -191,10 +191,11 @@ M1 against enumeration, add a lattice continuity correction for the deep tail,
 then graduate test-first. The Lugannani-Rice / r* inversion is identical to M1's;
 only the CGF source changes. Port-ready formulas (central + noncentral CGF and
 derivatives, saddle equation, LR, r*, the Daniels mean limit) are in
-`dev/kuonen-spa-formulas.md`, which also records a known M1 gap: the mean-band
-fallback returns the plain normal tail instead of the Daniels limiting form
-1/2 - K'''(0)/(6 sqrt(2 pi) K''(0)^{3/2}), dropping the skewness term. Harmless for
-tail p-values; fix when M1 is next touched.
+`dev/kuonen-spa-formulas.md`. That note also records the M1 mean-band fix (commit
+33849f1): the old fallback returned the plain normal tail near the mean, dropping
+the skewness term and (over a wider band than its 1e-6 guard) giving non-monotone
+values from 1/u - 1/w cancellation; now replaced by the Daniels limit plus a
+Taylor series of the correction over |w| < 0.1. Tails unchanged.
 
 ### M3: do not forget the sparse-grid / QMC work
 Tensor Gauss-Hermite costs n^r, feasible only for small r (the number of
