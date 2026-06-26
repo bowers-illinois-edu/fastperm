@@ -192,6 +192,20 @@ multivariate r* stays at O(1/n). Caveat: in the few-strata regime n is small, so
 order labels are guides; trust the enumeration slope. The r* test and the Osipov
 test are the same experiment (scale n, overlay LR vs r*).
 
+Two different r*s, do not conflate them. (i) The TAIL r* we would use: the
+Barndorff-Nielsen form of the saddlepoint CDF for a statistic with a known CGF,
+w* = w + (1/w) log(u/w) read straight off K_Q -- a pure inversion refinement, no
+nuisance parameters. This is what K-R generalize to the multivariate case (their
+eq 9) and what Brazzale-Davison-Reid (2007) document practically. (ii) The
+nuisance-parameter r* (Brazzale's core program, the `hoa` package): the same
+algebraic shape but for a parameter of interest in a PARAMETRIC likelihood with
+nuisance parameters, where the hard part is the information/nuisance correction
+(tangent exponential models, modified profile likelihood, Skovgaard). Our null is
+a permutation distribution with no likelihood and no nuisance parameter, so (ii)
+does not apply; we use (i), with Brazzale-Davison-Reid (2007) as the how-to and a
+small-sample-accuracy precedent. Validate r* against enumeration, not by invoking
+the asymptotic order.
+
 Hansen & Bowers (2008) calibrate their omnibus d^2 by chi-square (CLT), never by
 saddlepoint, so this genuinely extends their balance test.
 
@@ -309,6 +323,19 @@ Higher-order inversion (r*, the modified signed root; O(n^{-3/2}) scalar):
    (JSTOR 10.2307/2336207; MR0855891). The scalar r* origin (K-R ref [2]).
  - [V] Barndorff-Nielsen (1991), Biometrika 78(3):557-563. DOI 10.1093/biomet/78.3.557.
    Modified signed log likelihood ratio.
+ - [V] Brazzale, Davison & Reid (2007), Applied Asymptotics: Case Studies in
+   Small-Sample Statistics, Cambridge. The practical synthesis of the r* / higher-
+   order asymptotics program; the how-to reference (with the `hoa` R bundle: cond,
+   marg, nlreg) for computing r*. RELEVANCE: relevant for the SCALAR tail r* we
+   would use (w* = w + (1/w) log(u/w) off K_Q) and as a small-sample-accuracy
+   precedent; NOT for its core content, which is the nuisance-parameter r* for
+   PARAMETRIC likelihoods (tangent exponential models, modified profile likelihood,
+   Skovgaard) -- a different problem than our randomization-statistic tail (no
+   likelihood, no nuisance parameter). Cite as the r* how-to; do not import the
+   nuisance machinery. See the two-r* distinction in sec 3.
+ - [V/F] Brazzale & Davison (2008), "Accurate parametric inference for small
+   samples," Statistical Science 23(4):465-484 [F: volume/pages/DOI from memory,
+   verify -- likely DOI 10.1214/08-STS273]. Review of the same program.
  - [V/F] Daniels (1987), Int. Stat. Rev. 55(1):37-48. Lattice CC1/CC2; exact
    equation forms from secondary sources, verify vs Butler (2007) Sec. 1.2.5.
  - [V] Monti (1993), Stat. Prob. Lett. 17(2):131-140. Edgeworth = degraded SPA.
