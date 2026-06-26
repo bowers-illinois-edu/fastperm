@@ -82,6 +82,101 @@
   min(1, max(0, p))
 }
 
+## ---- M2: the non-Gaussian permutation saddlepoint --------------------------
+## K_Q(theta) = log E_{W ~ N(0, I_r)}[exp(K_e(sqrt(2 theta) W))], the exact CGF of
+## Q = ||e||^2 via the Hubbard-Stratonovich identity (theta > 0). K_e is the
+## centred joint CGF of the rotated, centred statistic e = T_y - mu_y. The
+## Gaussian expectation is evaluated by tensor Gauss-Hermite quadrature; the
+## resulting exact K_Q is inverted by Lugannani-Rice (and Barndorff-Nielsen r*).
+
+## physicists' Gauss-Hermite nodes/weights (Golub-Welsch): the standard rule for a
+## Gaussian expectation, vendored to keep the runtime MIT-licensed.
+.gh_nodes <- function(n) {
+  i <- seq_len(n - 1); a <- sqrt(i / 2)
+  J <- matrix(0, n, n); J[cbind(i, i + 1)] <- a; J[cbind(i + 1, i)] <- a
+  e <- eigen(J, symmetric = TRUE); o <- order(e$values)
+  list(x = e$values[o], w = (e$vectors[1, o])^2 * sqrt(pi))
+}
+
+## tensor N(0, I_r) rule: E[f(W)] ~ sum_k exp(lw_k) f(Z[k, ]). Physicists' nodes x
+## map to z = sqrt(2) x, weights w to log(w) - r/2 log(pi).
+.tensor_normal <- function(n, r) {
+  gh <- .gh_nodes(n); z1 <- sqrt(2) * gh$x; lw1 <- log(gh$w) - 0.5 * log(pi)
+  grid <- as.matrix(expand.grid(rep(list(seq_len(n)), r)))
+  list(Z = matrix(z1[grid], nrow(grid), r),
+       lw = rowSums(matrix(lw1[grid], nrow(grid), r)))
+}
+
+## .log_esym, vectorised across columns: Wb is n_b x N (tilted weights, one column
+## per quadrature node), returns the length-N vector of log e_m(exp(column)). Same
+## O(n_b * m) log-space recursion as .log_esym, run on all nodes at once.
+.log_esym_cols <- function(Wb, m) {
+  N <- ncol(Wb)
+  logp <- matrix(-Inf, m + 1L, N); logp[1L, ] <- 0           # log e_0 = 0
+  for (i in seq_len(nrow(Wb))) {
+    shifted <- logp[seq_len(m), , drop = FALSE] + rep(Wb[i, ], each = m)
+    logp[2L:(m + 1L), ] <- .logaddexp(logp[2L:(m + 1L), , drop = FALSE], shifted)
+  }
+  logp[m + 1L, ]
+}
+
+## K_Q(theta) closure: the centred CGF of the rotated statistic evaluated at every
+## node (vectorised), then the log of the Gauss-Hermite-weighted sum.
+.make_KQ_quad <- function(scoresY, idx, mb, nb, muy, tns) {
+  Z <- tns$Z; lw <- tns$lw
+  function(theta) {
+    if (theta <= 0) return(NA_real_)
+    S    <- sqrt(2 * theta) * Z                             # nodes x r tilt vectors
+    Wall <- scoresY %*% t(S)                                # n x N projected weights
+    KT   <- numeric(nrow(Z))
+    for (b in seq_along(idx)) {
+      m <- mb[b]; if (m == 0L) next
+      ix <- idx[[b]]; nbb <- nb[b]
+      if (m == nbb) { KT <- KT + colSums(Wall[ix, , drop = FALSE]); next }
+      KT <- KT + .log_esym_cols(Wall[ix, , drop = FALSE], m) - lchoose(nbb, m)
+    }
+    Ke <- KT - as.numeric(S %*% muy)                        # centre: K_e = K_T - s'mu_y
+    mx <- max(lw + Ke); mx + log(sum(exp(lw + Ke - mx)))    # logsumexp
+  }
+}
+
+## upper-tail P(Q >= q) from the numeric CGF K_Q (q > E[Q] => saddle theta > 0; Q
+## has bounded support, so K_Q has no pole). Derivatives by finite difference (GH
+## is near machine precision). Returns Lugannani-Rice and Barndorff-Nielsen r*.
+## Below the mean, and in the narrow band where the saddle falls under the FD
+## floor, falls back to the Gaussian-d tail (accurate there, not a rejection
+## region). h1, h2 are the first- and second-derivative FD steps.
+.quad_spa_upper <- function(KQ, q, m0, lambda, h1 = 1e-4, h2 = 2e-3,
+                            theta_max = 200) {
+  gauss <- .quad_lr_upper(lambda, q)
+  if (q <= 0) return(c(lr = 1, rstar = 1))
+  if (q <= m0) return(c(lr = gauss, rstar = gauss))
+  KQp  <- function(th) (KQ(th + h1) - KQ(th - h1)) / (2 * h1)
+  KQpp <- function(th) (KQ(th + h2) - 2 * KQ(th) + KQ(th - h2)) / h2^2
+  lo <- 2 * h2                                             # keep theta - h2 > 0
+  if (KQp(lo) >= q) return(c(lr = gauss, rstar = gauss))   # saddle under FD floor
+  hi <- lo
+  while (KQp(hi) < q && hi < theta_max) { lo <- hi; hi <- hi * 2 }
+  if (KQp(hi) < q) {                                       # q at/beyond support max
+    warning("observed Q is at or beyond the saddlepoint's reliable range; ",
+            "falling back to the Gaussian-d tail.", call. = FALSE)
+    return(c(lr = gauss, rstar = gauss))
+  }
+  th  <- stats::uniroot(function(t) KQp(t) - q, c(lo, hi))$root
+  kpp <- KQpp(th)
+  if (!is.finite(th) || kpp <= 0) {                        # FD noise (coarse/extreme)
+    warning("the saddlepoint second derivative is unreliable here (coarse lattice ",
+            "or extreme tail); falling back to the Gaussian-d tail.", call. = FALSE)
+    return(c(lr = gauss, rstar = gauss))
+  }
+  w  <- sign(th) * sqrt(2 * (th * q - KQ(th)))
+  u  <- th * sqrt(kpp)
+  lr <- stats::pnorm(w, lower.tail = FALSE) + stats::dnorm(w) * (1 / u - 1 / w)
+  rs <- stats::pnorm(w + log(u / w) / w, lower.tail = FALSE)
+  if (!is.finite(lr) || !is.finite(rs)) return(c(lr = gauss, rstar = gauss))
+  c(lr = min(1, max(0, lr)), rstar = min(1, max(0, rs)))
+}
+
 #' Saddlepoint tail probability of a quadratic form under the permutation null
 #'
 #' Computes the within-stratum permutation tail probability of the quadratic form
@@ -102,13 +197,26 @@
 #' @param metric either the string `"cov"` (use the exact permutation covariance
 #'   of `T`, giving the Hansen-Bowers omnibus statistic) or a symmetric
 #'   positive-definite `p x p` matrix (for example a covariate covariance).
-#' @param method `"gaussian"` (the weighted-chi-square tail under a Gaussian
+#' @param method `"gaussian"` (M1: the weighted-chi-square tail under a Gaussian
 #'   approximation to the centred statistic, inverted by Lugannani-Rice) or
-#'   `"saddlepoint"` (the non-normal permutation saddlepoint; not yet
-#'   implemented).
+#'   `"saddlepoint"` (M2: the non-normal permutation saddlepoint, which carries the
+#'   true skewness and higher cumulants of the permutation law into the tail).
+#' @param nodes number of Gauss-Hermite nodes per dimension for the
+#'   `"saddlepoint"` method (the Hubbard-Stratonovich integral is an `r`-dimensional
+#'   Gaussian expectation evaluated by tensor quadrature). Ignored for `"gaussian"`.
 #' @return a list with `p.value`, the observed `statistic` (`Q`), the `rank` of
 #'   the metric, the chi-square `eigenvalues` (weights), the permutation `mean`
-#'   of `Q`, the resolved `metric`, and the `method`.
+#'   of `Q`, the resolved `metric`, and the `method`. For `method = "saddlepoint"`
+#'   it also carries `p.value.rstar`, the Barndorff-Nielsen `r*` higher-order
+#'   refinement of `p.value`.
+#' @details The `"saddlepoint"` method uses the exact permutation CGF of the
+#'   centred statistic via the Hubbard-Stratonovich identity
+#'   `M_Q(theta) = E_{W ~ N(0, I_r)}[exp(K_e(sqrt(2 theta) W))]`, evaluated by
+#'   tensor Gauss-Hermite quadrature and inverted by Lugannani-Rice. The tensor
+#'   rule costs `nodes^r`, so it is feasible only for small `r` (the number of
+#'   representations); larger `r` needs the sparse-grid/QMC engine, which is not
+#'   yet implemented. Below `E[Q]` the method falls back to the Gaussian-d tail,
+#'   which is accurate there and not a rejection region.
 #' @references Hansen, B. B. and Bowers, J. (2008). Covariate balance in simple,
 #'   stratified and clustered comparative studies. Statistical Science 23,
 #'   219--236.
@@ -117,15 +225,14 @@
 #' z <- c(0, 0, 0, 1, 1, 1)
 #' # omnibus balance test (metric = the permutation covariance)
 #' fastperm_spa_quadratic(scores, z, rep(1, 6))$p.value
+#' # the non-normal permutation saddlepoint
+#' fastperm_spa_quadratic(scores, z, rep(1, 6), method = "saddlepoint")$p.value
 #' @export
 fastperm_spa_quadratic <- function(scores, treatment, strata,
                                    metric = "cov",
-                                   method = c("gaussian", "saddlepoint")) {
+                                   method = c("gaussian", "saddlepoint"),
+                                   nodes = 32L) {
   method <- match.arg(method)
-  if (identical(method, "saddlepoint"))
-    stop("the 'saddlepoint' method (M2, the non-normal permutation saddlepoint) ",
-         "is not yet implemented; use method = \"gaussian\".", call. = FALSE)
-
   scores <- as.matrix(scores)
   p <- ncol(scores)
 
@@ -149,16 +256,35 @@ fastperm_spa_quadratic <- function(scores, treatment, strata,
   lambda  <- Re(eigen((Sigma_y + t(Sigma_y)) / 2, symmetric = TRUE,
                       only.values = TRUE)$values)
   lambda  <- lambda[lambda > sqrt(.Machine$double.eps) * max(lambda, 1)]
+  r       <- length(lambda)
 
   t_obs <- as.numeric(crossprod(scores, as.numeric(treatment)))   # T at observed z
   d_y   <- as.numeric(crossprod(rot, t_obs - mu))
   q_obs <- sum(d_y^2)
 
-  list(p.value     = .quad_lr_upper(lambda, q_obs),
-       statistic   = q_obs,
-       rank        = length(lambda),
-       eigenvalues = lambda,
-       mean        = sum(lambda),
-       metric      = M,
-       method      = method)
+  out <- list(statistic = q_obs, rank = r, eigenvalues = lambda,
+              mean = sum(lambda), metric = M, method = method)
+
+  if (method == "gaussian") {
+    out$p.value <- .quad_lr_upper(lambda, q_obs)
+    return(out)
+  }
+
+  ## M2: tensor Gauss-Hermite over the r-dimensional Hubbard-Stratonovich integral
+  if (nodes^r > 250000L)
+    stop("rank r = ", r, " is too large for the tensor Gauss-Hermite engine ",
+         "(", nodes, "^", r, " nodes); the sparse-grid/QMC engine for larger r is ",
+         "not yet implemented. Use method = \"gaussian\", or reduce the number of ",
+         "representations.", call. = FALSE)
+  scoresY <- scores %*% rot                              # n x r rotated scores
+  muy     <- as.numeric(crossprod(rot, mu))              # rot' mu = E[T_y]
+  idx     <- split(seq_len(nrow(scores)), as.factor(strata))
+  tcounts <- as.numeric(treatment)
+  mb      <- unname(vapply(idx, function(ix) sum(tcounts[ix]), numeric(1)))
+  nb      <- unname(lengths(idx))
+  KQ      <- .make_KQ_quad(scoresY, idx, mb, nb, muy, .tensor_normal(nodes, r))
+  tail    <- .quad_spa_upper(KQ, q_obs, sum(lambda), lambda)
+  out$p.value       <- unname(tail["lr"])
+  out$p.value.rstar <- unname(tail["rstar"])
+  out
 }

@@ -38,6 +38,15 @@ sc_2s <- cbind(c(1, 2, 3, 4, 2, 4, 6, 8),
 tr_2s <- c(0, 0, 1, 1, 0, 0, 1, 1)
 st_2s <- c(1, 1, 1, 1, 2, 2, 2, 2)
 
+## ten matched pairs, orbit 2^10 = 1024: a DENSE multi-stratum support where the
+## continuous saddlepoint needs no continuity correction. The second score is
+## fibonacci, so the permutation law of Q is genuinely skewed and the Gaussian-d
+## M1 drifts in the tail -- the regime M2 is built for.
+sc_p <- cbind(rep(c(1, 2), 10) + rep(0:9, each = 2) * 0.3,
+              c(rbind(rep(1, 10), c(2, 3, 5, 8, 13, 21, 34, 55, 89, 144))))
+tr_p <- rep(c(0, 1), 10)
+st_p <- rep(1:10, each = 2)
+
 
 ## --- oracle-level checks (independent of the M1 implementation) --------------
 
@@ -145,11 +154,63 @@ test_that("M1 reports a statistic and weights consistent with the oracle", {
   expect_equal(sum(res$eigenvalues), mean(en$Q), tolerance = 1e-9)
 })
 
-test_that("the saddlepoint (M2) method is not yet available", {
-  ## Documents the staged plan: the non-normal permutation saddlepoint is M2.
-  ## Until it lands, requesting it must fail loudly rather than silently fall
-  ## back to the Gaussian-d answer.
+## --- M2 specification: the non-Gaussian permutation saddlepoint --------------
+
+test_that("M2 (saddlepoint) returns a finite tail and a Barndorff-Nielsen r*", {
+  res <- fastperm_spa_quadratic(sc_p, tr_p, st_p, metric = stats::cov(sc_p),
+                                method = "saddlepoint")
+  expect_true(is.finite(res$p.value) && res$p.value > 0 && res$p.value < 1)
+  expect_true(is.finite(res$p.value.rstar) &&
+              res$p.value.rstar > 0 && res$p.value.rstar < 1)
+  expect_identical(res$method, "saddlepoint")
+})
+
+test_that("M2 is never worse than M1 against the exact tail at the observed Q", {
+  ## A guarantee that holds whether the observed Q is moderate (M2 strictly closer)
+  ## or so extreme that M2 falls back to the Gaussian tail (M2 == M1): M2's error
+  ## against the exact orbit tail must not exceed M1's.
+  Sx    <- stats::cov(sc_p)
+  en    <- enumerate_Q(sc_p, tr_p, st_p, Sx)
+  exact <- enum_quadratic_tail(en, en$q_obs)
+  m2 <- suppressWarnings(
+    fastperm_spa_quadratic(sc_p, tr_p, st_p, metric = Sx, method = "saddlepoint")$p.value)
+  m1 <- fastperm_spa_quadratic(sc_p, tr_p, st_p, metric = Sx, method = "gaussian")$p.value
+  expect_lte(abs(m2 - exact), abs(m1 - exact) + 1e-9)
+})
+
+test_that("M2 matches the exact permutation tail and beats M1 where d is skewed", {
+  ## Tight accuracy at a controlled moderate quantile (via the internal inverter)
+  ## on the dense orbit. M2 is within the method's own tail error of the exact
+  ## orbit tail and strictly closer than the Gaussian-d M1, which the skewed scores
+  ## throw off by tens to hundreds of percent.
+  Sx  <- stats::cov(sc_p)
+  en  <- enumerate_Q(sc_p, tr_p, st_p, Sx); Qen <- en$Q
+  rot <- .quad_inv_sqrt(Sx)
+  muy <- as.numeric(crossprod(rot, en$mu))
+  idx <- split(seq_along(tr_p), as.factor(st_p))
+  mb  <- vapply(idx, function(ix) sum(tr_p[ix]), numeric(1)); nb <- lengths(idx)
+  Vd  <- fastperm_linear_cgf_mv(sc_p, tr_p, st_p)$cov
+  Sy  <- crossprod(rot, Vd %*% rot)
+  lam <- Re(eigen((Sy + t(Sy)) / 2, symmetric = TRUE, only.values = TRUE)$values)
+  lam <- lam[lam > sqrt(.Machine$double.eps) * max(lam, 1)]
+  KQ  <- .make_KQ_quad(sc_p %*% rot, idx, mb, nb, muy, .tensor_normal(32, length(lam)))
+  q   <- as.numeric(stats::quantile(Qen, 0.9)); exact <- mean(Qen >= q)
+  m2  <- unname(.quad_spa_upper(KQ, q, sum(lam), lam)["lr"])
+  m1  <- .quad_lr_upper(lam, q)
+  ## ~5% in practice; 0.15 is the calibrated margin for the saddlepoint's own tail
+  ## error, loose enough for the method and tight enough to catch a wrong CGF.
+  expect_equal(m2, exact, tolerance = 0.15)
+  expect_lt(abs(m2 - exact), abs(m1 - exact))
+})
+
+test_that("M2 errors for rank too large for the tensor grid, pointing past M2", {
+  ## tensor Gauss-Hermite costs nodes^r; for r >= 4 at the default 32 nodes that
+  ## exceeds the cap and must error toward the (unbuilt) sparse-grid/QMC engine,
+  ## not silently run an infeasible grid.
+  set.seed(1)
+  sc4 <- matrix(stats::rnorm(48), 12, 4)
+  z4  <- rep(c(0, 0, 1, 1), 3); s4 <- rep(1:3, each = 4)
   expect_error(
-    fastperm_spa_quadratic(sc_1s, tr_1s, st_1s, method = "saddlepoint"),
-    "not yet implemented")
+    fastperm_spa_quadratic(sc4, z4, s4, metric = "cov", method = "saddlepoint"),
+    "tensor Gauss-Hermite")
 })

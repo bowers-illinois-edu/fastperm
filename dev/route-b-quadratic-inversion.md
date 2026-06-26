@@ -179,22 +179,46 @@ validated to recover the closed-form mean and covariance exactly) therefore do
 NOT rescue M2. They remain useful -- clean K_Q' for Lugannani-Rice, and the
 cumulant infrastructure RItools wants -- but they are not the fix.
 
-### The fix (M2), validated at the CGF level
+### M2 SHIPPED (method = "saddlepoint"), validated against enumeration
 The H-S representation is an exact Gaussian expectation:
-    M_Q(theta) = E_{W ~ N(0, I_r)}[ exp(K_d(sqrt(2 theta) W)) ].
-Evaluate it by Gauss-Hermite QUADRATURE, not Laplace. Tensor GH (40 nodes,
-r = 2) recovered the exact enumerated K_Q to six digits for both M = V_d and
-M = Sigma_x, where the Gaussian was off by a factor in the tail. It needs only
-CGF VALUES, no derivatives. Then invert the now-exact K_Q by Lugannani-Rice.
-Remaining M2 work: implement GH-quadrature K_Q + LR, confirm the full tail beats
-M1 against enumeration, add a lattice continuity correction for the deep tail,
-then graduate test-first. The Lugannani-Rice / r* inversion is identical to M1's;
-only the CGF source changes. Port-ready formulas (central + noncentral CGF and
-derivatives, saddle equation, LR, r*, the Daniels mean limit) are in
-`dev/kuonen-spa-formulas.md`. That note also records the M1 mean-band fix (commit
-33849f1): the old fallback returned the plain normal tail near the mean, dropping
-the skewness term and (over a wider band than its 1e-6 guard) giving non-monotone
-values from 1/u - 1/w cancellation; now replaced by the Daniels limit plus a
+    M_Q(theta) = E_{W ~ N(0, I_r)}[ exp(K_e(sqrt(2 theta) W)) ],
+evaluated by tensor Gauss-Hermite (not Laplace). K_Q(theta) = log M_Q is the EXACT
+permutation CGF of Q (Q has bounded support, so K_Q is entire -- no pole, unlike
+the Gaussian weighted-chi-square). The inversion is the same Lugannani-Rice as M1
+plus the Barndorff-Nielsen r*; only the CGF source changes.
+
+Implementation (R/saddlepoint-quadratic.R): vendored Golub-Welsch GH (.gh_nodes),
+tensor N(0,I_r) rule (.tensor_normal), a VECTORISED multi-node elementary-symmetric
+evaluation (.log_esym_cols -- the key speedup; the per-row apply prototype took
+4 min, the vectorised package call is ~0.1s), the K_Q closure (.make_KQ_quad), and
+the upper-tail inverter (.quad_spa_upper: FD theta-derivatives -- GH is machine
+precision, so FD is fine -- saddle solve, LR + r*). The public function gains
+method = "saddlepoint", returns p.value (LR) and p.value.rstar, and guards
+nodes^r > 250000 with an error pointing at the unbuilt M3.
+
+Validation (dev/spike-m2-inversion.R and the tests). GH self-converges to ~1e-15
+(GH-40 vs GH-64) for moderate theta, ~1e-6 in the deep tail. On the dense 10-pair
+orbit with skewed (fibonacci) scores and M = Sigma_x, M2 tracks the exact tail to
+~3-5% where M1 (Gaussian) is off by 15-340%:
+    q=25.4: exact 0.0508, M2 0.0524 (3%), M1 0.0884 (74%)
+    q=32.4: exact 0.0117, M2 0.0112 (5%), M1 0.0516 (340%)
+LR and r* are nearly identical here. Below E[Q], and at the support edge / coarse
+lattices where FD goes unreliable, M2 falls back to the Gaussian-d tail (finite,
+with a warning) -- never NaN, never a hard error.
+
+KNOWN LIMITATION (next M2 refinement): coarse lattices. For a single or double
+stratum, V_d is proportional to cov(scores) (so the metrics coincide) and Q's
+support is a coarse, atom-heavy lattice; the continuous saddlepoint then under/
+overshoots the discrete tail and needs a continuity correction (lit note sec 5;
+Daniels 1987 CC2, 2 sinh(s/2)). M2 is accurate on the DENSE multi-stratum support
+that the balance-test regime actually has; the coarse-lattice continuity
+correction is the next refinement, not yet implemented.
+
+Port-ready formulas (CGF and derivatives, saddle equation, LR, r*, the Daniels mean
+limit) are in `dev/kuonen-spa-formulas.md`, which also records the M1 mean-band fix
+(commit 33849f1): the old fallback returned the plain normal tail near the mean,
+dropping the skewness term and (over a wider band than its 1e-6 guard) giving
+non-monotone values from 1/u - 1/w cancellation; now the Daniels limit plus a
 Taylor series of the correction over |w| < 0.1. Tails unchanged.
 
 ### M3: do not forget the sparse-grid / QMC work

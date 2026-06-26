@@ -9,7 +9,8 @@ fastperm_spa_quadratic(
   treatment,
   strata,
   metric = "cov",
-  method = c("gaussian", "saddlepoint")
+  method = c("gaussian", "saddlepoint"),
+  nodes = 32L
 )
 }
 \arguments{
@@ -24,15 +25,21 @@ of \code{scores}.}
 of \code{T}, giving the Hansen-Bowers omnibus statistic) or a symmetric
 positive-definite \verb{p x p} matrix (for example a covariate covariance).}
 
-\item{method}{\code{"gaussian"} (the weighted-chi-square tail under a Gaussian
+\item{method}{\code{"gaussian"} (M1: the weighted-chi-square tail under a Gaussian
 approximation to the centred statistic, inverted by Lugannani-Rice) or
-\code{"saddlepoint"} (the non-normal permutation saddlepoint; not yet
-implemented).}
+\code{"saddlepoint"} (M2: the non-normal permutation saddlepoint, which carries the
+true skewness and higher cumulants of the permutation law into the tail).}
+
+\item{nodes}{number of Gauss-Hermite nodes per dimension for the
+\code{"saddlepoint"} method (the Hubbard-Stratonovich integral is an \code{r}-dimensional
+Gaussian expectation evaluated by tensor quadrature). Ignored for \code{"gaussian"}.}
 }
 \value{
 a list with \code{p.value}, the observed \code{statistic} (\code{Q}), the \code{rank} of
 the metric, the chi-square \code{eigenvalues} (weights), the permutation \code{mean}
-of \code{Q}, the resolved \code{metric}, and the \code{method}.
+of \code{Q}, the resolved \code{metric}, and the \code{method}. For \code{method = "saddlepoint"}
+it also carries \code{p.value.rstar}, the Barndorff-Nielsen \verb{r*} higher-order
+refinement of \code{p.value}.
 }
 \description{
 Computes the within-stratum permutation tail probability of the quadratic form
@@ -46,12 +53,23 @@ null fixes each stratum's treated count.
 The metric enters only through the rotation \code{R} with \verb{R R' = M^\{-1\}}: exactly,
 \verb{Q = || R'(T - mu) ||^2}, a sum of squares whose Gaussian-approximation weights
 are the eigenvalues of the rotated permutation covariance.
+
+The \code{"saddlepoint"} method uses the exact permutation CGF of the
+centred statistic via the Hubbard-Stratonovich identity
+\verb{M_Q(theta) = E_\{W ~ N(0, I_r)\}[exp(K_e(sqrt(2 theta) W))]}, evaluated by
+tensor Gauss-Hermite quadrature and inverted by Lugannani-Rice. The tensor
+rule costs \code{nodes^r}, so it is feasible only for small \code{r} (the number of
+representations); larger \code{r} needs the sparse-grid/QMC engine, which is not
+yet implemented. Below \code{E[Q]} the method falls back to the Gaussian-d tail,
+which is accurate there and not a rejection region.
 }
 \examples{
 scores <- cbind(c(1, 2, 3, 4, 5, 6), c(1, 1, 2, 2, 5, 9))
 z <- c(0, 0, 0, 1, 1, 1)
 # omnibus balance test (metric = the permutation covariance)
 fastperm_spa_quadratic(scores, z, rep(1, 6))$p.value
+# the non-normal permutation saddlepoint
+fastperm_spa_quadratic(scores, z, rep(1, 6), method = "saddlepoint")$p.value
 }
 \references{
 Hansen, B. B. and Bowers, J. (2008). Covariate balance in simple,
