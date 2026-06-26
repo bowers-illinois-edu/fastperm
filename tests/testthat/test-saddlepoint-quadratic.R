@@ -214,3 +214,25 @@ test_that("M2 errors for rank too large for the tensor grid, pointing past M2", 
     fastperm_spa_quadratic(sc4, z4, s4, metric = "cov", method = "saddlepoint"),
     "tensor Gauss-Hermite")
 })
+
+test_that("M2 handles collinear representations (rank-deficient V_d)", {
+  ## a third representation that is a linear combination of the first two makes the
+  ## permutation covariance V_d rank-deficient; with a full-rank metric the rotated
+  ## covariance still has rank r = 2, so the saddlepoint must rotate onto that 2-dim
+  ## range (r < p) rather than fail with non-conformable quadrature. This is the
+  ## case riposte's screen reaches when it shrinks a singular Sigma to a full-rank
+  ## metric while the scores themselves stay collinear.
+  sc_rd <- cbind(sc_p, sc_p %*% c(0.7, -0.4))   # 3rd column = 0.7 c1 - 0.4 c2
+  ## a covariance-scaled, ridge-regularized metric: full rank (so the oracle's chol
+  ## succeeds and Q stays moderate) while the scores stay collinear (V_d rank 2)
+  M     <- stats::cov(sc_rd) + 0.1 * diag(diag(stats::cov(sc_rd)))
+  res   <- fastperm_spa_quadratic(sc_rd, tr_p, st_p, metric = M,
+                                  method = "saddlepoint")
+  expect_equal(res$rank, 2L)                    # the collinear direction is dropped
+  expect_true(is.finite(res$p.value) && res$p.value > 0 && res$p.value <= 1)
+  ## the rotation onto the range is exact, so Q matches the enumeration oracle, and
+  ## the saddlepoint tail matches the exact permutation tail
+  en <- enumerate_Q(sc_rd, tr_p, st_p, M)
+  expect_equal(res$statistic, en$q_obs, tolerance = 1e-8)
+  expect_equal(res$p.value, enum_quadratic_tail(en, en$q_obs), tolerance = 0.15)
+})

@@ -250,16 +250,22 @@ fastperm_spa_quadratic <- function(scores, treatment, strata,
   }
 
   ## rotate by M^{-1/2}: Q = ||rot' (T - mu)||^2 and the Gaussian-approximation
-  ## weights are the eigenvalues of the rotated permutation covariance
+  ## weights are the eigenvalues of the rotated permutation covariance. Keep the
+  ## eigenVECTORS too: when V_d (hence Sigma_y) is rank-deficient -- collinear
+  ## representations -- the centred statistic lives in the r-dimensional range of
+  ## Sigma_y, and rotating further onto that range (rotr, p x r) makes Q a sum of
+  ## exactly r coordinates, which the M2 quadrature dimension must match. For a
+  ## full-rank metric the extra rotation is orthogonal and leaves Q unchanged.
   rot     <- .quad_inv_sqrt(M)
-  Sigma_y <- crossprod(rot, Vd %*% rot)                  # rot' V_d rot (r x r)
-  lambda  <- Re(eigen((Sigma_y + t(Sigma_y)) / 2, symmetric = TRUE,
-                      only.values = TRUE)$values)
-  lambda  <- lambda[lambda > sqrt(.Machine$double.eps) * max(lambda, 1)]
+  Sigma_y <- crossprod(rot, Vd %*% rot)                  # rot' V_d rot (p x p)
+  eig     <- eigen((Sigma_y + t(Sigma_y)) / 2, symmetric = TRUE)
+  keep    <- eig$values > sqrt(.Machine$double.eps) * max(eig$values, 1)
+  lambda  <- eig$values[keep]
   r       <- length(lambda)
+  rotr    <- rot %*% eig$vectors[, keep, drop = FALSE]   # p x r combined rotation
 
   t_obs <- as.numeric(crossprod(scores, as.numeric(treatment)))   # T at observed z
-  d_y   <- as.numeric(crossprod(rot, t_obs - mu))
+  d_y   <- as.numeric(crossprod(rotr, t_obs - mu))       # r range coordinates
   q_obs <- sum(d_y^2)
 
   out <- list(statistic = q_obs, rank = r, eigenvalues = lambda,
@@ -276,8 +282,8 @@ fastperm_spa_quadratic <- function(scores, treatment, strata,
          "(", nodes, "^", r, " nodes); the sparse-grid/QMC engine for larger r is ",
          "not yet implemented. Use method = \"gaussian\", or reduce the number of ",
          "representations.", call. = FALSE)
-  scoresY <- scores %*% rot                              # n x r rotated scores
-  muy     <- as.numeric(crossprod(rot, mu))              # rot' mu = E[T_y]
+  scoresY <- scores %*% rotr                             # n x r rotated scores
+  muy     <- as.numeric(crossprod(rotr, mu))             # rotr' mu = E[T_y] in range
   idx     <- split(seq_len(nrow(scores)), as.factor(strata))
   tcounts <- as.numeric(treatment)
   mb      <- unname(vapply(idx, function(ix) sum(tcounts[ix]), numeric(1)))
