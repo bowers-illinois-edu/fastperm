@@ -71,6 +71,37 @@ test_that("E[Q] equals trace(M^{-1} Sigma), the sum of the chi-square weights", 
 })
 
 
+## --- Lugannani-Rice near the mean: the Daniels removable-singularity limit ----
+
+test_that(".quad_lr_upper returns the Daniels skewness limit at the mean, not 1/2", {
+  ## At q = E[Q] the Lugannani-Rice 1/u - 1/w term is a removable 0/0 whose finite
+  ## limit (Daniels 1987) keeps the third cumulant:
+  ##   P(Q >= E[Q]) = 1/2 - K'''(0) / (6 sqrt(2 pi) K''(0)^{3/2}).
+  ## For a right-skewed weighted chi-square (K'''(0) > 0) this is strictly below
+  ## the 1/2 a normal approximation gives. The old fallback returned the plain
+  ## normal tail and dropped this skewness term; this is the regression guard.
+  lambda <- c(3, 1, 0.5)                        # distinct weights -> right-skewed Q
+  m0 <- sum(lambda)
+  k2 <- 2 * sum(lambda^2)                       # K''(0)
+  k3 <- 8 * sum(lambda^3)                       # K'''(0)
+  daniels <- 0.5 - k3 / (6 * sqrt(2 * pi) * k2^(3 / 2))
+  expect_equal(.quad_lr_upper(lambda, m0), daniels, tolerance = 1e-9)
+  expect_lt(.quad_lr_upper(lambda, m0), 0.5)
+})
+
+test_that(".quad_lr_upper is continuous and monotone across the mean", {
+  ## The fix must not introduce a jump at the |theta|-small band edge: the
+  ## Lugannani-Rice value approaches the Daniels limit as q -> E[Q] from both
+  ## sides. (The old code jumped from ~1/2 in the band to the LR curve outside.)
+  lambda <- c(3, 1, 0.5)
+  m0  <- sum(lambda); sd0 <- sqrt(2 * sum(lambda^2))
+  qs  <- m0 + seq(-0.3, 0.3, length.out = 41) * sd0
+  ps  <- vapply(qs, function(q) .quad_lr_upper(lambda, q), numeric(1))
+  expect_true(all(diff(ps) < 0))                # strictly decreasing in q
+  expect_lt(max(abs(diff(ps))), 0.05)           # no jump at the band edge
+})
+
+
 ## --- M1 specification (fails until fastperm_spa_quadratic is implemented) -----
 
 test_that("M1 with metric = 'cov' reduces to the chi-square tail", {

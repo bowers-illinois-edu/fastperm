@@ -40,16 +40,32 @@
 ## P(Q >= q) for Q = sum_k lambda_k chi^2_1 (lambda > 0) by Lugannani-Rice. The
 ## CGF K(theta) = -1/2 sum log(1 - 2 theta lambda_k) has a pole at
 ## theta = 1/(2 max lambda), so the saddlepoint root is bracketed below the pole
-## (q above the mean) or on the negative axis (q below the mean). Near theta = 0
-## we return the normal tail, the removable-singularity limit of the formula.
+## (q above the mean) or on the negative axis (q below the mean).
+##
+## The correction term 1/u - 1/w is a removable 0/0 at q = E[Q] and loses
+## precision to cancellation (w -> u) over a neighbourhood of the mean, not just
+## at the point. There we replace it by its Taylor series in theta, c0 + c1 theta
+## (Daniels 1987), with
+##   c0 = -K'''(0) / (6 K''(0)^{3/2}),
+##   c1 = 5 K'''(0)^2 / (24 K''(0)^{5/2}) - K''''(0) / (8 K''(0)^{3/2}).
+## The leading term gives P(Q >= E[Q]) = 1/2 + phi(0) c0 = 1/2 - K'''(0) /
+## (6 sqrt(2 pi) K''(0)^{3/2}) -- the skewness-corrected limit a plain normal tail
+## (1/2 at the mean) would miss. The series is used while |w| < 0.1, where the raw
+## difference is unreliable and the linear term is accurate to ~1e-3; the direct
+## formula is used in the tails, where it is exact and the series would drift.
 .quad_lr_upper <- function(lambda, q) {
   K   <- function(th) -0.5 * sum(log(1 - 2 * th * lambda))
   Kp  <- function(th) sum(lambda / (1 - 2 * th * lambda))
   Kpp <- function(th) sum(2 * lambda^2 / (1 - 2 * th * lambda)^2)
-  m0  <- sum(lambda); sd0 <- sqrt(2 * sum(lambda^2))
+  m0  <- sum(lambda)
+  k2  <- 2  * sum(lambda^2)                               # K''(0)
+  k3  <- 8  * sum(lambda^3)                               # K'''(0)
+  k4  <- 48 * sum(lambda^4)                               # K''''(0)
+  c0  <- -k3 / (6 * k2^(3 / 2))
+  c1  <- 5 * k3^2 / (24 * k2^(5 / 2)) - k4 / (8 * k2^(3 / 2))
   if (q <= 0) return(1)                                   # Q is non-negative
   if (abs(q - m0) < 1e-9 * (1 + abs(m0)))
-    return(stats::pnorm((q - m0) / sd0, lower.tail = FALSE))
+    return(0.5 + stats::dnorm(0) * c0)                    # q = E[Q]: w = 0
   if (q > m0) {
     pole <- 1 / (2 * max(lambda))
     th <- stats::uniroot(function(t) Kp(t) - q,
@@ -59,11 +75,10 @@
     while (Kp(lo) > q && lo > -1e10) lo <- lo * 2
     th <- stats::uniroot(function(t) Kp(t) - q, c(lo, -1e-12))$root
   }
-  if (abs(th) < 1e-6)
-    return(stats::pnorm((q - m0) / sd0, lower.tail = FALSE))
-  w <- sign(th) * sqrt(2 * (th * q - K(th)))
-  u <- th * sqrt(Kpp(th))
-  p <- stats::pnorm(w, lower.tail = FALSE) + stats::dnorm(w) * (1 / u - 1 / w)
+  w    <- sign(th) * sqrt(2 * (th * q - K(th)))
+  term <- if (abs(w) < 0.1) c0 + c1 * th                  # near-mean series
+          else 1 / (th * sqrt(Kpp(th))) - 1 / w           # direct, in the tails
+  p <- stats::pnorm(w, lower.tail = FALSE) + stats::dnorm(w) * term
   min(1, max(0, p))
 }
 
