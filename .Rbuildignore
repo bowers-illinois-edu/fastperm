@@ -7,3 +7,7 @@
 ^CLAUDE_CODING\.md$
 ^docs$
 ^\.gitignore$
+^_pkgdown\.yml$
+^pkgdown-site$
+^pkgdown$
+^POINT\.md$

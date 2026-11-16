@@ -2,8 +2,9 @@
 # Everything routes through devtools so the whole dependency graph is one tool.
 # Slow simulations, if any, run only when NOT_CRAN=true, which the relevant
 # targets set for you. fastperm is pure R --- there is no src/ to compile, so
-# the clean target removes only R build artifacts and leaves docs/ (the
-# committed pkgdown output) alone; rebuild it with `make site`.
+# the clean target removes only R build artifacts and the local pkgdown site.
+# The site builds into pkgdown-site/ (git-ignored), not docs/, because docs/
+# holds the design memo; GitHub Actions publishes the site from main.
 
 RSCRIPT := Rscript
 
@@ -35,11 +36,11 @@ build: document ## Build the source tarball
 install: document ## Install fastperm into the local library
 	$(RSCRIPT) -e 'devtools::install(upgrade=FALSE)'
 
-site: ## Build the pkgdown site (needs pkgdown)
+site: ## Build the pkgdown site into pkgdown-site/ (needs pkgdown)
 	$(RSCRIPT) -e 'pkgdown::build_site()'
 
 coverage: ## Report test coverage (needs covr)
 	NOT_CRAN=true $(RSCRIPT) -e 'print(covr::package_coverage())'
 
-clean: ## Remove build artifacts (leaves docs/; rebuild with `make site`)
-	rm -rf ..Rcheck *.Rcheck *.tar.gz doc Meta
+clean: ## Remove build artifacts and the local pkgdown site
+	rm -rf ..Rcheck *.Rcheck *.tar.gz doc Meta pkgdown-site

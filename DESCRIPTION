@@ -25,6 +25,6 @@ Suggests:
     CompQuadForm
 Config/testthat/edition: 3
 VignetteBuilder: knitr
-URL: https://github.com/bowers-illinois-edu/fastperm
+URL: https://bowers-illinois-edu.github.io/fastperm/, https://github.com/bowers-illinois-edu/fastperm
 BugReports: https://github.com/bowers-illinois-edu/fastperm/issues
 Config/roxygen2/version: 8.0.0

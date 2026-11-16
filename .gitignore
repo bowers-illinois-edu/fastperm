@@ -6,3 +6,6 @@
 .DS_Store
 /docs/_build/
 /.quarto/
+
+# pkgdown output (built locally by `make site`, published by GitHub Actions)
+/pkgdown-site/

@@ -1,0 +1,22 @@
+url: https://bowers-illinois-edu.github.io/fastperm/
+
+template:
+  bootstrap: 5
+
+# The site builds into pkgdown-site/ rather than pkgdown's default docs/,
+# because docs/ holds the design memo (docs/memo.md), which README.md,
+# CLAUDE.md, and the riposte integration notes cite by that path.
+destination: pkgdown-site
+
+reference:
+- title: Saddlepoint p-values
+  desc: Tail probabilities of a test statistic under the within-stratum permutation null.
+  contents:
+  - fastperm_spa_linear
+  - fastperm_spa_quadratic
+  - saddlepoint_tail
+- title: Cumulant generating functions
+  desc: Exact permutation CGFs of linear statistics, the input to the saddlepoint.
+  contents:
+  - fastperm_linear_cgf
+  - fastperm_linear_cgf_mv

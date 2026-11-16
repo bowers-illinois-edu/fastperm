@@ -2,15 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+@POINT.md
+
 ## Project Overview
 
 `fastperm` is an R package for fast, general-purpose permutation testing with optional Rosenbaum-style sensitivity analysis over the Gamma bias parameter. The design generalizes Rosenbaum's sensitivity-analysis framework: a user supplies a test statistic, a design (permutation null), and optionally a Gamma, and the package returns a p-value without being locked into Rosenbaum's specific test-statistic/design templates.
 
-Internally, the package is organized around a four-tier dispatch that routes each call to the fastest method that is accurate for the user's combination of design, test statistic, and Gamma. The package is in early development --- no methodology has been implemented. The full design document lives at `docs/memo.md`, and the companion paper/analysis repo is at `~/repos/fastperm-paper/`.
+Internally, the package is organized around a four-tier dispatch that routes each call to the fastest method that is accurate for the user's combination of design, test statistic, and Gamma. The package is in early development: Tier 1 (the saddlepoint, for linear and quadratic statistics under within-stratum permutation) is implemented, and Tiers 0, 2, and 3 and the Gamma sensitivity code are not. The full design document is at `docs/memo.md`, and the companion paper/analysis repo is at `~/repos/fastperm-paper/`.
 
 ## Companion Paper
 
-The sibling paper and analysis repository lives at `~/repos/fastperm-paper/`. That repo holds the paper, simulation scripts, and applied analyses built on top of this package.
+The sibling paper and analysis repository is at `~/repos/fastperm-paper/`. That repo holds the paper, simulation scripts, and applied analyses built on top of this package.
 
 ## Build System
 
@@ -25,13 +27,15 @@ Rscript -e 'devtools::check()'
 
 GitHub Actions runs `R CMD check` on the standard matrix via `.github/workflows/R-CMD-check.yaml`.
 
+The pkgdown site (`make site`) builds into `pkgdown-site/`, not pkgdown's default `docs/`, because `docs/` holds the design memo. `.github/workflows/pkgdown.yaml` builds it on every push to main and publishes it to the `gh-pages` branch, served at https://bowers-illinois-edu.github.io/fastperm/.
+
 ## Code Style
 
 See `CLAUDE_CODING.md` in this repo for the full coding-style guidance. Pure R only for now. C++/Rcpp deferred until profiling identifies hotspots. The pure-R implementation serves as the oracle for future C++/GPU rewrites --- keep its tests.
 
 ## Architecture
 
-The internal dispatch routes each call to the cheapest method that is accurate for the user's combination of design, test statistic, and Gamma:
+The internal dispatch routes each call to the fastest method that is accurate for the user's combination of design, test statistic, and Gamma:
 
 - **Tier 0 --- defer to Rosenbaum.** When the design and statistic match a case Rosenbaum's asymptotics cover, call that software and return its answer. Offer a non-asymptotic cross-check as a toggle.
 - **Tier 1 --- saddlepoint approximation (SPA).** For linear or asymptotically-linear test statistics, use SPA. Closed-form, essentially instant, accurate to several digits in the tail for moderate n.
@@ -57,11 +61,11 @@ Key references for the methodology (see `docs/memo.md` section 3 for the full bi
 
 ## Writing and Revision
 
-The historical session HANDOFF.md lives in the paper repo at `~/repos/fastperm-paper/HANDOFF.md`. This repo's design document is `docs/memo.md`.
+The historical session HANDOFF.md is in the paper repo at `~/repos/fastperm-paper/HANDOFF.md`. This repo's design document is `docs/memo.md`.
 
 ## Important Notes
 
-- Do not implement methodology without Jake's go-ahead. This package is a scaffolding; Jake will drive the research agenda deliberately. Ask before adding dependencies to Imports.
+- Do not implement methodology without Jake's go-ahead. Most of the planned methods are not built, and Jake will drive the research agenda deliberately. Ask before adding dependencies to Imports.
 - Pure R only for now. No `src/`, no Rcpp.
 - Keep `Imports` in DESCRIPTION empty until Jake makes the design decisions. `coin` goes in `Suggests` because it is the benchmark comparison. (`stats` was added to `Imports` 2026-06-25 for the saddlepoint core -- base R, the only addition.)
-- DOWNSTREAM DEPENDENCY: the `riposte` package (`~/repos/riposte`) calls `fastperm_spa_linear()`, `fastperm_linear_cgf()`, and `saddlepoint_tail()` by name for its fast unadjusted-Cauchy path. Do NOT change those names or signatures without updating riposte and the shared note in `~/repos/riposte/FASTPERM_INTEGRATION.md`. When the planned `perm_test()` front door lands, keep a stable entry point riposte can call.
+- DOWNSTREAM DEPENDENCY: the `riposte` package (`~/repos/riposte`) calls `fastperm_spa_linear()`, `fastperm_linear_cgf()`, and `saddlepoint_tail()` by name for its fast unadjusted-Cauchy path. Do NOT change those names or signatures without updating riposte and the shared note in `~/repos/riposte/FASTPERM_INTEGRATION.md`. When the planned `perm_test()` front door is built, keep a stable entry point riposte can call.
