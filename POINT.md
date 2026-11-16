@@ -33,14 +33,16 @@ The package is the software for the companion paper in
 Randomization Inference in Observational Studies," aimed at Biometrika. A
 reader of the paper should be able to apply its methods to their own data.
 
-fastperm does not replace Rosenbaum's packages where his normal approximation
-is accurate, such as M-statistics in large matched-pair samples. His packages
-are also faster there. fastperm does not claim the saddlepoint is accurate
-when the statistic takes few distinct values, as with small strata or heavily
-tied outcomes. There the approximation can understate the exact p-value. No
-exact p-value can fall below the smallest one the permutation distribution
-attains, yet the saddlepoint can report values below it. fastperm tests
-hypotheses. It does not estimate the size of effects.
+Rosenbaum's packages for matched designs (sensitivitymv, senstrat, and
+others) compute p-values from a normal approximation. fastperm does not
+replace them where that approximation is accurate, such as for M-statistics
+in large matched-pair samples. His packages are also faster there. fastperm
+does not claim the saddlepoint is accurate when the statistic takes few
+distinct values, as with small strata or heavily tied outcomes. There the
+approximation can understate the exact p-value. No exact p-value can fall
+below the smallest one the permutation distribution attains, yet the
+saddlepoint can report values below it. fastperm tests hypotheses. It does
+not estimate the size of effects.
 
 ## Future work
 
@@ -48,13 +50,13 @@ Sensitivity analysis is an aim for later work. In an observational study the
 researcher would also choose Gamma: an unmeasured covariate could make one
 unit's odds of treatment as much as Gamma times another's within the same
 matched set. fastperm would report the largest p-value that hidden bias of
-that size could produce, as a curve over Gamma. Rosenbaum's packages
-(sensitivitymv, senstrat, and others) compute that bound from a normal
-approximation, one Gamma at a time, and only for statistics that are a sum of
-one score per matched set or stratum. fastperm would compute it from a
-saddlepoint approximation instead. We aim to prove in the paper that the
-saddlepoint gives the whole curve as one formula in Gamma. `PLAN.md` in the
-paper repository lists that result as a theorem not yet proved.
+that size could produce, as a curve over Gamma. Rosenbaum's packages compute
+that bound from a normal approximation, one Gamma at a time, and only for
+statistics that are a sum of one score per matched set or stratum. fastperm
+would compute it from a saddlepoint approximation instead. We aim to prove in
+the paper that the saddlepoint gives the whole curve as one formula in Gamma.
+`PLAN.md` in the paper repository lists that result as a theorem not yet
+proved.
 
 Factorial, stepped-wedge, and regression-discontinuity designs are also
 future work.
