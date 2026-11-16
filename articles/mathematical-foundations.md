@@ -1,0 +1,447 @@
+# Mathematical Foundations of the Quadratic-Form Permutation Saddlepoint
+
+This memo explains how `fastperm` computes the tail probability of a
+quadratic-form test statistic under a within-stratum permutation null,
+why each step is built the way it is, and where each decision lives in
+the code and in the test suite. It is written to be read start to
+finish: the plain idea first, a small concrete case next, then the
+notation. Code and test pointers are collected in the final section so
+the prose stays about the method.
+
+## 1. The problem, and why one function serves three front ends
+
+A researcher comparing treated and control groups across several
+covariates wants a single number that says whether the groups are
+jointly balanced, and a p-value for it that does not assume large
+samples. The natural statistic is a Mahalanobis-type distance of the
+treated-group score vector from its permutation mean,
+``` math
+Q = (T - \mu)' \, M^{-1} \, (T - \mu),
+\qquad T_c = \sum_i z_i \, \text{score}_{i,c},
+```
+where $`z`$ is the 0/1 treatment vector, $`T`$ is the vector of
+treated-group score sums across $`r`$ representations (covariates, basis
+functions, or test statistics), $`\mu = E[T]`$ is the exact permutation
+mean, and $`M`$ is a fixed symmetric positive-definite metric. The null
+is the within-stratum permutation of $`z`$ that holds each stratum’s
+treated count fixed.
+
+Three different tests are the same computation with a different $`M`$:
+
+- the `fastperm` omnibus combination uses $`M = \Sigma`$, a pooled
+  covariance;
+- the `RItools` `balanceTest` omnibus $`d^2`$ of Hansen and
+  Bowers (2008) uses $`M = V_d`$, the permutation covariance of $`T`$,
+  so $`Q`$ is asymptotically $`\chi^2_{\,\mathrm{rank}(V_d)}`$;
+- the `RItools` covariate-covariance omnibus uses $`M = \Sigma_x`$, so
+  $`Q`$ is asymptotically a weighted sum of chi-squares.
+
+The point that makes this one function and not three: $`M`$ does not
+change across the permutation. Both $`V_d`$ and $`\Sigma_x`$ are
+functions of the covariates and the stratum sizes, not of $`z`$. So
+$`M`$ is a parameter of the computation, supplied by the caller, and the
+metric is never hard-wired.
+
+## 2. The rotation reduction: the metric is preprocessing
+
+The first decision removes the metric from the hard part of the problem.
+For any matrix $`R`$ with $`R R' = M^{-1}`$ (take $`R = M^{-1/2}`$ from
+the spectral decomposition, dropping numerically-zero eigenvalues so a
+rank-deficient metric projects onto its range),
+``` math
+Q = (T-\mu)' M^{-1} (T-\mu) = (T-\mu)' R R' (T-\mu) = \lVert R'(T-\mu) \rVert^2 .
+```
+So $`Q`$ is a plain sum of squares of the rotated, centred statistic
+$`e = R'(T-\mu)`$. The metric enters only as the one-time rotation;
+everything downstream works on $`e`$. This is exact, not an
+approximation: the test suite checks it to machine precision against
+full enumeration of the permutation orbit.
+
+In rotated coordinates write $`e = T_y - \mu_y`$ with $`T_y = R'T`$ the
+rotated statistic and $`\mu_y = R'\mu`$ its mean. The eigenvalues
+$`\lambda_1, \dots,
+\lambda_r`$ of the rotated permutation covariance $`R' V_d R`$ are the
+weights that appear below.
+
+## 3. The two engines
+
+`fastperm_spa_quadratic(scores, treatment, strata, metric, method)`
+offers two inversions of the same statistic.
+
+- `method = "gaussian"` (M1) treats $`e`$ as Gaussian with the exact
+  permutation covariance. Then $`Q`$ is a weighted sum of independent
+  $`\chi^2_1`$ variables, $`Q = \sum_k \lambda_k \chi^2_{1}`$, whose
+  cumulant generating function (CGF) is closed form and inverted by
+  Lugannani-Rice.
+- `method = "saddlepoint"` (M2) drops the Gaussian assumption and uses
+  the *exact* permutation CGF of $`Q`$, so the true skewness and higher
+  cumulants of the permutation law enter the tail.
+
+M1 is fast and is the right tool when $`e`$ is close to Gaussian (large
+strata). M2 is the tool when $`e`$ is skewed and discrete – few strata,
+small $`n`$, many covariates – which is exactly where balance testing
+lives and where the Gaussian tail drifts.
+
+## 4. M1: the Gaussian weighted-chi-square tail
+
+### 4.1 The CGF and Lugannani-Rice
+
+For $`Q = \sum_k \lambda_k \chi^2_1`$ with $`\lambda_k > 0`$ the CGF is
+``` math
+K(\theta) = -\tfrac12 \sum_k \log(1 - 2\theta\lambda_k),
+```
+analytic and steep on $`\theta \in (-\infty,\, 1/(2\lambda_{\max}))`$,
+with a pole at $`\theta = 1/(2\lambda_{\max})`$. The Lugannani-Rice tail
+approximation is
+``` math
+P(Q \ge q) \approx 1 - \Phi(\hat w) + \phi(\hat w)\left(\frac{1}{\hat u} - \frac{1}{\hat w}\right),
+\quad
+\hat w = \operatorname{sign}(\hat\theta)\sqrt{2(\hat\theta q - K(\hat\theta))},
+\quad
+\hat u = \hat\theta\sqrt{K''(\hat\theta)},
+```
+where the saddlepoint $`\hat\theta`$ solves $`K'(\hat\theta) = q`$. This
+reproduces
+[`CompQuadForm::imhof`](https://rdrr.io/pkg/CompQuadForm/man/imhof.html)
+(the exact inversion of the same Gaussian-$`d`$ distribution) to about
+1% relative error in the tail – the saddlepoint’s own accuracy, not
+slack – and reduces to the $`\chi^2_r`$ tail when $`M = V_d`$ makes all
+$`\lambda_k = 1`$.
+
+### 4.2 The near-mean correction
+
+The term $`1/\hat u - 1/\hat w`$ is a removable $`0/0`$ at $`q = E[Q]`$,
+where $`\hat w \to 0`$ and $`\hat u \to 0`$. Worse, the difference loses
+precision to cancellation ($`\hat w \approx \hat u`$) over a whole
+neighbourhood of the mean, not just at the point. A naive guard that
+returns the normal tail there drops the third-cumulant (skewness) term
+and, over the band where the raw formula is noisy, makes the estimated
+tail non-monotone in $`q`$.
+
+The fix replaces the term by its Taylor series in $`\theta`$ near the
+mean,
+``` math
+\frac{1}{\hat u} - \frac{1}{\hat w} = c_0 + c_1 \theta + O(\theta^2),
+\quad
+c_0 = -\frac{K'''(0)}{6\,K''(0)^{3/2}},
+\quad
+c_1 = \frac{5\,K'''(0)^2}{24\,K''(0)^{5/2}} - \frac{K''''(0)}{8\,K''(0)^{3/2}},
+```
+with the central cumulants $`K''(0) = 2\sum\lambda_k^2`$,
+$`K'''(0) = 8\sum\lambda_k^3`$, $`K''''(0) = 48\sum\lambda_k^4`$. The
+leading term gives the Daniels (1987) limit
+$`P(Q \ge E[Q]) = \tfrac12 + \phi(0)\,c_0
+= \tfrac12 - K'''(0)/(6\sqrt{2\pi}\,K''(0)^{3/2})`$, which is below
+$`1/2`$ for a right-skewed $`Q`$. The series is used while
+$`|\hat w| < 0.1`$, where the raw difference is unreliable; the direct
+formula runs in the tails, where it is accurate. This region carries
+$`p \approx 0.5`$ and never affects a rejection decision, but the
+function is now monotone and skewness-aware there rather than flat.
+
+## 5. M2: the exact permutation CGF for non-Gaussian $`d`$
+
+### 5.1 The obstacle
+
+The Lugannani-Rice machine needs only the CGF of the scalar $`Q`$,
+$`K_Q(\theta) = \log E[e^{\theta Q}]`$. For Gaussian $`e`$ that CGF is
+closed form (Section 4). For the true, non-Gaussian permutation law of
+$`e`$ there is generally no closed form for $`K_Q`$, and supplying it is
+the entire problem. Every standard quadratic-form tail method (Imhof,
+Davies, Farebrother, Liu-Tang-Zhang, and the saddlepoint version Kuonen)
+reduces $`Q`$ to a weighted sum of chi-squares, which is a Gaussian-only
+fact; none of them applies to a non-Gaussian, lattice $`e`$.
+
+### 5.2 The Hubbard-Stratonovich identity
+
+We do have the *joint* CGF of $`e`$, $`K_e(s) = \log E[e^{s'e}]`$, in
+closed form: it is the elementary-symmetric permutation CGF evaluated on
+the scores projected onto $`s`$. The Hubbard-Stratonovich identity
+converts the quadratic form into a Gaussian average of that linear CGF.
+For $`\theta > 0`$,
+``` math
+e^{\theta \lVert e \rVert^2}
+= E_{W \sim N(0, I_r)}\!\left[\, e^{\sqrt{2\theta}\, W'e} \,\right],
+```
+because $`E_W[e^{a'W}] = e^{\lVert a\rVert^2/2}`$ with
+$`a = \sqrt{2\theta}\,e`$. Taking the expectation over $`e`$ inside (the
+dependence on $`e`$ is now linear) gives the moment generating function
+of $`Q`$ as an exact $`r`$-dimensional Gaussian integral,
+``` math
+M_Q(\theta) = E_{W \sim N(0, I_r)}\!\left[\, \exp\!\big(K_e(\sqrt{2\theta}\, W)\big) \,\right],
+\qquad K_Q(\theta) = \log M_Q(\theta).
+```
+Because $`e`$ has finite (permutation) support, $`K_e`$ grows at most
+linearly, the $`-\lVert W\rVert^2/2`$ Gaussian weight dominates, and the
+integral converges for all $`\theta`$. The bounded support also means
+$`Q`$ is bounded, so $`K_Q`$ is entire: it has no pole, unlike the
+Gaussian weighted-chi-square CGF.
+
+### 5.3 Why Laplace fails and quadrature succeeds
+
+A natural first idea is to evaluate the Gaussian integral by Laplace’s
+method (steepest descent on $`W`$). It does not work, for an instructive
+reason. The CGF $`K_e`$ is centred, so $`\nabla K_e(0) = 0`$ and
+$`W = 0`$ is always the critical point; the leading-order Laplace
+expansion there returns exactly the Gaussian $`K_Q`$ and discards all of
+the non-normality. The non-Gaussian content lives in the full integral,
+not in its mode. (The same fact has a clean reading through
+Kolassa-Robinson, below: a steepest-descent evaluation re-imposes a
+degenerate surface approximation; doing the angular integral exactly is
+what keeps the non-normality.)
+
+The fix is to evaluate the Gaussian average by Gauss-Hermite quadrature
+– the standard rule for a Gaussian expectation – rather than by Laplace.
+With a tensor product of one-dimensional Gauss-Hermite nodes mapped to
+the $`N(0, I_r)`$ measure,
+``` math
+K_Q(\theta) = \log \sum_k e^{\,\ell_k}\, \exp\!\big(K_e(\sqrt{2\theta}\, z_k)\big),
+```
+with nodes $`z_k`$ and log-weights $`\ell_k`$. This recovers the exact
+$`K_Q`$: against full enumeration of the orbit, the Gauss-Hermite value
+matches to about $`10^{-15}`$ for moderate $`\theta`$ and to about
+$`10^{-6}`$ in the deep tail.
+
+### 5.4 Inversion, derivatives, and the higher-order option
+
+With $`K_Q`$ in hand the inversion is the same Lugannani-Rice as M1.
+Because the Gauss-Hermite $`K_Q`$ is accurate to near machine precision,
+its $`\theta`$-derivatives $`K_Q'`$ and $`K_Q''`$ are taken by finite
+differences – no analytic gradient or Hessian of $`K_e`$ is needed. The
+saddlepoint $`\hat\theta`$ solves $`K_Q'(\hat\theta) = q`$; since $`Q`$
+is bounded there is no pole to bracket against, and $`K_Q'`$ maps
+$`\theta`$ to the support range of $`Q`$.
+
+Alongside the Lugannani-Rice tail, M2 returns the Barndorff-Nielsen
+$`r^*`$ refinement,
+``` math
+P(Q \ge q) \approx 1 - \Phi\!\left(\hat w + \frac{1}{\hat w}\log\frac{\hat u}{\hat w}\right),
+```
+which upgrades the relative error from $`O(n^{-1})`$ to $`O(n^{-3/2})`$
+from the same $`\hat w, \hat u`$. This is the one place a higher-order
+asymptotic enters the pipeline; everything before it (the identity, the
+quadrature) is exact or numerically exact.
+
+### 5.5 Robustness and the dimension limit
+
+M2 is built to return a finite, sensible number in every case. Below
+$`E[Q]`$, where the upper-tail saddlepoint would need $`\theta < 0`$
+(outside the Hubbard-Stratonovich range), it returns the Gaussian-$`d`$
+tail, which is accurate there and not a rejection region. At the support
+edge or on a coarse lattice, where the finite-difference second
+derivative goes unreliable, it again falls back to the Gaussian tail
+with a warning rather than returning `NaN` or erroring.
+
+The cost of the tensor Gauss-Hermite rule is $`\text{nodes}^r`$, so it
+is feasible only for small $`r`$. At the default 32 nodes the function
+refuses $`r \ge 4`$ with an error that points at the unbuilt sparse-grid
+/ quasi-Monte-Carlo engine (M3), which is the path to the many-covariate
+balance test rather than optional polish.
+
+## 6. Where this sits in the literature
+
+The nearest developed precedent is Kolassa and Robinson (2011), who give
+a saddlepoint treatment of a multivariate permutation test. They do
+*not* approximate the quadratic-form tail: they replace the quadratic
+form with a likelihood-ratio- like statistic, because the direct
+large-deviation tail of a quadratic form in a multivariate mean has
+relative error only $`O(n^{-1/4})`$ (Osipov, 1981), and they sidestep
+that barrier by changing the statistic. Their own table shows the
+classical Mahalanobis $`D^2`$ tail calibrated by chi-square is badly off
+in the tail, and they state accurate tails for it are “not available.”
+That classical $`D^2`$ is exactly the statistic `RItools` and
+Hansen-Bowers report, and the cell M2 fills.
+
+The $`O(n^{-1/4})`$ barrier is a property of the method, not of the
+statistic: it comes from integrating a multivariate Edgeworth correction
+over a curved (ellipsoidal) level set, where the surface contribution
+carries an extra factor of $`n^{1/2}`$ (Robinson, Hoglund, Holst and
+Quine, 1990, Corollary 2.1). M2 never forms that surface integral; the
+Hubbard-Stratonovich average runs over all directions of $`W`$, which is
+the angular integration over the degenerate sphere of dominating points,
+and Gauss-Hermite does it exactly. So the curvature is folded exactly
+into the scalar $`K_Q`$ and the barrier does not arise.
+
+Two honest caveats temper any rate claim, and we have now tested both.
+First, escaping the curvature artifact is not the same as proving scalar
+$`O(1/n)`$: the residual question is the discreteness of $`Q`$ at small
+stratum counts, not curvature. Second, the honest competitor is Imhof,
+not Osipov’s method; as the stratum count grows the inner Laplace
+becomes exact and Imhof is itself $`O(1/B)`$, so M2’s gain over Imhof is
+a better *constant* at small $`B`$ – carrying the true skewness and
+kurtosis – not a better rate.
+
+The decisive check is an experiment: the relative error of M2 against
+the exact permutation tail as the stratum count $`B`$ grows. We ran it
+(matched triples, skewed $`d`$, metric $`V_d`$, full $`3^B`$
+enumeration, tail depth $`p = 0.05`$, averaged over random designs), and
+it confirms the second caveat against the first reading. M2’s relative
+error does *not* fall like $`1/B`$. It sits at 3 to 7 percent over
+$`B = 8`$ to $`12`$ and, if anything, grows toward a floor, while the
+crude chi-square M1 keeps falling toward its own $`+0.5\%`$ limit. So
+the simulation revises the optimistic reading into the better-constant
+claim: M2 cuts the M1 p-value error 4- to 10-fold at the stratum counts
+a balance test uses (escaping the useless Osipov-rate $`D^2`$ tail), but
+it does not buy a better asymptotic rate.
+
+The residual is a finite-discrete-representation effect, and a chain of
+controls rules out the obvious corrections. It is not a pipeline
+artifact: the Gauss-Hermite CGF reproduces the exact orbit CGF to
+$`10^{-14}`$ at the saddle, so the gap is genuine Lugannani-Rice error
+inverting the exact CGF of a *finite* support. It is not the continuous
+saddlepoint: the analytic chi-square LR error is $`+0.5\%`$ for
+$`r = 1, 2, 3`$ alike. It is not curvature: the bias *falls* with
+dimension – $`+15\%`$ at $`r = 1`$, $`+7\%`$ at $`r = 2`$, $`+2\%`$ at
+$`r = 3`$ – where a count of discrete points against the curved level
+set would grow with $`r`$. And it is not generic permutation
+discreteness: the scalar sum saddlepoint on the same orbit is accurate
+to under one percent. What remains is the gap between continuous
+Lugannani-Rice and the exact tail of a finite, discrete representation
+of $`Q`$; a uniform law on $`n`$ i.i.d. exact chi-square draws shows the
+same bias against an analytic LR error of $`+0.5\%`$. The practical
+reading is favorable: the Mahalanobis omnibus is used at $`r \ge 2`$ (a
+single covariate is a scalar test), the bias there is small and *falls*
+as covariates are added, and it is conservative – M2 reports p-values
+slightly too large. The full chain of experiments is in
+`dev/route-b-rate-experiment-findings.md`; a fuller literature
+discussion is in `dev/route-b-literature.md`.
+
+On higher-order asymptotics specifically: the scalar $`r^*`$ of Section
+5.4 is the tail refinement of a statistic with a known CGF
+(Barndorff-Nielsen 1986; Brazzale, Davison and Reid 2007 is the
+practical reference). It is distinct from Brazzale’s core program, the
+$`r^*`$ for a parameter of interest in a parametric likelihood with
+nuisance parameters, which our randomization null – no likelihood, no
+nuisance parameter – does not invoke.
+
+## 7. Known limitation: coarse lattices and the finite-discrete residual
+
+M2 is much more accurate than M1 on the dense, multi-stratum support
+balance testing has – 4 to 10 times better in the rate experiment of
+Section 6 – but it carries the finite-discrete residual diagnosed there,
+and a separate coarse-lattice edge case. On a single or double stratum
+$`V_d`$ is proportional to the sample covariance of the scores (so the
+metric choices coincide), and $`Q`$’s support is a coarse, atom-heavy
+lattice; the continuous saddlepoint then under- or overshoots the
+discrete tail, so M2 falls back to the Gaussian tail there. That
+fallback ships.
+
+The dense-support residual (Section 6) is not addressed by a continuity
+correction, and we are explicit that we do not implement one: the
+controls show it is not a regular lattice (no fixed span; the local span
+shrinks like $`1/N`$, which would predict a vanishing bias the data
+contradict), not the empirical CGF’s tail-max, not boundary curvature,
+and not the continuous chi-square saddlepoint. It is the gap between
+continuous Lugannani-Rice and the exact tail of a finite, discrete
+$`Q`$, and it shrinks with dimension rather than growing. Because that
+residual is small and falling at the $`r \ge 2`$ where the omnibus is
+used, conservative in sign, and already far below M1, a finite-discrete
+correction (an Euler-Maclaurin-type boundary term) is research-level
+work whose payoff we judge not worth its complexity for this
+application. The path forward is to wire M2 into the balance-test front
+ends, not to chase the last few percent at low $`r`$.
+
+## 8. Validation
+
+Every claim above is checked against the exact permutation distribution,
+obtained by walking the entire within-stratum orbit (no Monte Carlo
+error) for the small designs the tests use. The oracle is `enumerate_Q`
+in the test helper. On a dense ten-pair orbit with skewed scores and
+$`M = \Sigma_x`$, M2 tracks the exact tail to within 3 to 5 percent
+where the Gaussian M1 is off by 15 to 340 percent – the gap widens with
+the skewness of $`e`$, as the theory predicts.
+
+``` r
+
+library(fastperm)
+# eight matched pairs; the second covariate is skewed (fibonacci), so the
+# permutation law of Q is non-normal and the Gaussian tail drifts
+scores <- cbind(rep(c(1, 2), 8) + rep(0:7, each = 2) * 0.4,
+                c(rbind(rep(1, 8), c(2, 3, 5, 8, 13, 21, 34, 55))))
+strata <- rep(1:8, each = 2)
+# treat the high-score unit in five of the eight pairs (a moderate imbalance)
+z <- rep(0, 16)
+for (b in 1:8) z[if (b <= 5) 2 * b else 2 * b - 1] <- 1
+# Gaussian (M1) versus the non-normal permutation saddlepoint (M2)
+fastperm_spa_quadratic(scores, z, strata, method = "gaussian")$p.value
+#> [1] 0.05205406
+res <- fastperm_spa_quadratic(scores, z, strata, method = "saddlepoint")
+c(lugannani_rice = res$p.value, r_star = res$p.value.rstar)
+#> lugannani_rice         r_star 
+#>     0.02712069     0.02712045
+```
+
+## 9. Decisions, with code and test locations
+
+Each row is a decision, the function that implements it (in
+`R/saddlepoint-quadratic.R` unless noted), and the test that guards it
+(in `tests/testthat/test-saddlepoint-quadratic.R` unless noted).
+
+- **Rotation reduction $`Q = \lVert R'(T-\mu)\rVert^2`$, metric as
+  preprocessing.** `.quad_inv_sqrt` (the $`M^{-1/2}`$ rotation). Test:
+  “the rotation reduction $`Q = \lVert d_y\rVert^2`$ is an exact
+  identity”.
+- **Metric as a caller-supplied parameter (“cov” or a matrix).**
+  `fastperm_spa_quadratic` argument `metric`. Tests: “M1 with metric =
+  ‘cov’ reduces to the chi-square tail”; “M1 reproduces imhof for a
+  non-identity metric”.
+- **Exact permutation mean and covariance (Strasser-Weber).**
+  `fastperm_linear_cgf_mv` in `R/cgf-stratified-mv.R`. Test: “the
+  enabler’s permutation covariance matches the orbit covariance”.
+- **M1 Lugannani-Rice on the weighted-chi-square CGF.**
+  `.quad_lr_upper`. Tests: “M1 with metric = ‘cov’ reduces to the
+  chi-square tail”; “M1 reproduces imhof for a non-identity metric”.
+- **M1 near-mean Daniels limit and Taylor series (the cancellation
+  fix).** `.quad_lr_upper` (coefficients `c0`, `c1`). Tests:
+  “.quad_lr_upper returns the Daniels skewness limit at the mean, not
+  1/2”; “.quad_lr_upper is continuous and monotone across the mean”.
+- **M2 Hubbard-Stratonovich CGF by Gauss-Hermite quadrature.**
+  `.make_KQ_quad`, `.tensor_normal`, `.gh_nodes`. The Laplace dead-end
+  and the quadrature fix are recorded in
+  `dev/route-b-quadratic-inversion.md`.
+- **Vectorised multi-node elementary-symmetric evaluation (the
+  speedup).** `.log_esym_cols` (a column-vectorised `.log_esym` from
+  `R/cgf-stratified.R`).
+- **M2 finite-difference $`\theta`$-derivatives (justified by
+  machine-precision GH).** `.quad_spa_upper`.
+- **M2 Lugannani-Rice tail plus Barndorff-Nielsen $`r^*`$.**
+  `.quad_spa_upper` (returned as `p.value` and `p.value.rstar`). Test:
+  “M2 (saddlepoint) returns a finite tail and a Barndorff-Nielsen r\*“.
+- **M2 Gaussian fallback below $`E[Q]`$, at the support edge, and on
+  coarse lattices.** `.quad_spa_upper`. Test: “M2 is never worse than M1
+  against the exact tail at the observed Q”.
+- **M2 accuracy and improvement over M1 on the skewed dense case.**
+  Test: “M2 matches the exact permutation tail and beats M1 where d is
+  skewed”.
+- **Tensor-grid dimension guard pointing at M3.**
+  `fastperm_spa_quadratic` (the `nodes^r > 250000` check). Test: “M2
+  errors for rank too large for the tensor grid, pointing past M2”.
+- **Exact-enumeration oracle (ground truth for all of the above).**
+  `enumerate_Q`, `enum_quadratic_tail` in
+  `tests/testthat/helper-quadratic-enumerate.R`.
+
+## References
+
+- Barndorff-Nielsen, O. E. (1986). Inference on full or partial
+  parameters based on the standardized signed log likelihood ratio.
+  *Biometrika* 73, 307-322.
+- Brazzale, A. R., Davison, A. C. and Reid, N. (2007). *Applied
+  Asymptotics: Case Studies in Small-Sample Statistics*. Cambridge
+  University Press.
+- Daniels, H. E. (1987). Tail probability approximations. *International
+  Statistical Review* 55, 37-48.
+- Hansen, B. B. and Bowers, J. (2008). Covariate balance in simple,
+  stratified and clustered comparative studies. *Statistical Science*
+  23, 219-236.
+- Kolassa, J. and Robinson, J. (2011). Saddlepoint approximations for
+  likelihood ratio like statistics with applications to permutation
+  tests. *Annals of Statistics* 39, 3357-3368.
+- Kuonen, D. (1999). Saddlepoint approximations for distributions of
+  quadratic forms in normal variables. *Biometrika* 86, 929-935.
+- Lugannani, R. and Rice, S. (1980). Saddle point approximation for the
+  distribution of the sum of independent random variables. *Advances in
+  Applied Probability* 12, 475-490.
+- Osipov, L. V. (1981). On large deviations for sums of random vectors
+  in $`R^k`$. *Journal of Multivariate Analysis* 11, 115-126.
+- Robinson, J., Hoglund, T., Holst, L. and Quine, M. P. (1990). On
+  approximating probabilities for small and large deviations in $`R^d`$.
+  *Annals of Probability* 18, 727-753.
